@@ -4,7 +4,9 @@
     context: null,
     jobs: [],
     employees: [],
-    entries: []
+    entries: [],
+    editEmployees: [],
+    editingEntry: null
   };
 
   function todayText() {
@@ -33,6 +35,13 @@
 
   function setManageMessage(text, ok) {
     const el = document.getElementById('manageMessage');
+    if (!el) return;
+    el.textContent = text || '';
+    el.className = ok ? 'ok' : 'error';
+  }
+
+  function setEditMessage(text, ok) {
+    const el = document.getElementById('editMessage');
     if (!el) return;
     el.textContent = text || '';
     el.className = ok ? 'ok' : 'error';
@@ -343,6 +352,7 @@
           return;
         }
         state.entries = res.entries || [];
+        cancelEntryEdit();
         renderEntryList();
         setManageMessage(`Đã tải ${state.entries.length} phiếu ngày ${res.ngay}.`, true);
       })
@@ -375,7 +385,10 @@
       const statusText = deleted ? 'ĐÃ HỦY' : 'ACTIVE';
       const actionHtml = deleted
         ? `<div class="entry-meta">Lý do hủy: ${escapeHtml(e.lyDoHuy || '')}</div>`
-        : `<div class="entry-actions"><button class="delete-entry" type="button" onclick="deleteEntry('${escapeHtml(e.phieuId)}')">Hủy phiếu</button></div>`;
+        : `<div class="entry-actions">
+             <button class="edit-entry" type="button" onclick="editEntry('${escapeHtml(e.phieuId)}')">Sửa phiếu</button>
+             <button class="delete-entry" type="button" onclick="deleteEntry('${escapeHtml(e.phieuId)}')">Hủy phiếu</button>
+           </div>`;
       return `
         <div class="entry-card ${deleted ? 'deleted' : ''}">
           <div class="entry-head">
@@ -393,6 +406,164 @@
         </div>
       `;
     }).join('');
+  }
+
+  function buildEditEmployeeOptions(selectedSoThe) {
+    const selected = String(selectedSoThe || '');
+    const found = state.editEmployees.some(e => String(e.soThe) === selected);
+    let list = state.editEmployees.slice();
+    if (selected && !found) {
+      list.unshift({ soThe: selected, hoTen: '', conLai: 8 });
+    }
+    return '<option value="">-- Số thẻ --</option>' + list.map(e => {
+      const sel = String(e.soThe) === selected ? ' selected' : '';
+      return `<option value="${escapeHtml(e.soThe)}" data-conlai="${e.conLai}"${sel}>${escapeHtml(e.soThe)} · còn ${e.conLai}h</option>`;
+    }).join('');
+  }
+
+  function buildEditHourOptions(max, selectedHour) {
+    let html = '<option value="">Giờ</option>';
+    const limit = Math.max(1, Math.min(Number(max || 8), 8));
+    for (let i = 1; i <= limit; i++) {
+      const sel = Number(selectedHour) === i ? ' selected' : '';
+      html += `<option value="${i}"${sel}>${i}h</option>`;
+    }
+    return html;
+  }
+
+  function addEditEmployeeRow(soThe, soGio) {
+    const wrap = document.getElementById('editEmployeeRows');
+    const row = document.createElement('div');
+    row.className = 'edit-emp-row';
+    row.innerHTML = `
+      <select class="edit-emp" name="editSoThe">${buildEditEmployeeOptions(soThe)}</select>
+      <select class="edit-hours" name="editSoGio">${buildEditHourOptions(8, soGio)}</select>
+      <button type="button">×</button>
+    `;
+    const emp = row.querySelector('.edit-emp');
+    const hours = row.querySelector('.edit-hours');
+    emp.onchange = () => {
+      const opt = emp.options[emp.selectedIndex];
+      const max = Number(opt.dataset.conlai || 8);
+      hours.innerHTML = buildEditHourOptions(max, '');
+    };
+    const opt = emp.options[emp.selectedIndex];
+    if (opt && opt.value) {
+      hours.innerHTML = buildEditHourOptions(Number(opt.dataset.conlai || 8), soGio);
+    }
+    row.querySelector('button').onclick = () => row.remove();
+    wrap.appendChild(row);
+  }
+
+  function editEntry(phieuId) {
+    if (!state.context || !state.context.isQL) {
+      setManageMessage('Chỉ QL được sửa phiếu.', false);
+      return;
+    }
+
+    setManageMessage('Đang tải chi tiết phiếu...', true);
+    setEditMessage('', true);
+
+    google.script.run
+      .withSuccessHandler(res => {
+        if (!res.ok) {
+          setManageMessage(res.reason || 'Không tải được chi tiết phiếu.', false);
+          return;
+        }
+        state.editingEntry = res.entry;
+        state.editEmployees = res.employees || [];
+        renderEntryEditForm(res.entry);
+        setManageMessage('Đã tải chi tiết phiếu: ' + res.entry.phieuId, true);
+      })
+      .withFailureHandler(err => setManageMessage(err.message, false))
+      .apiGetWorkEntryDetail({
+        deviceId: state.deviceId,
+        phieuId
+      });
+  }
+
+  function renderEntryEditForm(entry) {
+    const box = document.getElementById('entryEditBox');
+    if (!box) return;
+    box.classList.remove('hidden');
+    document.getElementById('editPhieuId').value = entry.phieuId || '';
+    document.getElementById('editHangMuc').value = entry.hangMuc || '';
+    document.getElementById('editNoiDungCongViec').value = entry.noiDungCongViec || '';
+    document.getElementById('editReason').value = '';
+    document.getElementById('editEmployeeRows').innerHTML = '';
+    (entry.details || []).forEach(d => addEditEmployeeRow(d.soThe, d.soGio));
+    if (!(entry.details || []).length) addEditEmployeeRow();
+    box.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+
+  function cancelEntryEdit() {
+    const box = document.getElementById('entryEditBox');
+    if (box) box.classList.add('hidden');
+    state.editingEntry = null;
+    state.editEmployees = [];
+    setEditMessage('', true);
+  }
+
+  function collectEditPayload() {
+    const rows = Array.from(document.querySelectorAll('#editEmployeeRows .edit-emp-row'));
+    const nhanSu = [];
+    const seen = {};
+
+    rows.forEach(row => {
+      const soThe = row.querySelector('select[name="editSoThe"]').value;
+      const soGio = Number(row.querySelector('select[name="editSoGio"]').value);
+      if (!soThe && !soGio) return;
+      if (!soThe || !soGio) {
+        throw new Error('Có dòng nhân viên sửa chưa chọn đủ số thẻ và số giờ.');
+      }
+      if (seen[soThe]) {
+        throw new Error(`Số thẻ ${soThe} bị chọn trùng trong phiếu sửa. Hãy gộp giờ vào một dòng.`);
+      }
+      seen[soThe] = true;
+      nhanSu.push({ soThe, soGio });
+    });
+
+    if (!nhanSu.length) {
+      throw new Error('Phiếu sửa phải có ít nhất 1 nhân viên.');
+    }
+
+    const payload = {
+      deviceId: state.deviceId,
+      phieuId: document.getElementById('editPhieuId').value,
+      noiDungCongViec: document.getElementById('editNoiDungCongViec').value,
+      reason: document.getElementById('editReason').value,
+      nhanSu,
+      nhanSuJson: JSON.stringify(nhanSu)
+    };
+
+    if (!payload.reason.trim()) throw new Error('Vui lòng nhập lý do sửa phiếu.');
+    return payload;
+  }
+
+  function saveEntryEdit() {
+    let payload;
+    try {
+      payload = collectEditPayload();
+    } catch (err) {
+      setEditMessage(err.message, false);
+      return;
+    }
+
+    if (!confirm('Xác nhận lưu sửa phiếu ' + payload.phieuId + '?')) return;
+
+    setEditMessage('Đang lưu sửa phiếu...', true);
+    google.script.run
+      .withSuccessHandler(res => {
+        if (!res.ok) {
+          setEditMessage(res.reason || 'Không sửa được phiếu.', false);
+          return;
+        }
+        setEditMessage('Đã sửa phiếu: ' + res.phieuId + ' · ' + res.updatedNhanSu + ' nhân viên', true);
+        reloadEmployees();
+        loadWorkEntries();
+      })
+      .withFailureHandler(err => setEditMessage(err.message, false))
+      .apiUpdateWorkEntry(payload);
   }
 
   function deleteEntry(phieuId) {

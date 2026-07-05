@@ -102,6 +102,35 @@
           <button class="manage" type="button" onclick="loadWorkEntries()">Tải danh sách phiếu</button>
           <p id="manageMessage"></p>
           <div id="entryList" class="entry-list"></div>
+
+          <div id="entryEditBox" class="entry-edit hidden">
+            <h3>Sửa phiếu</h3>
+            <p class="hint">Chỉ sửa nội dung công việc, nhân viên và số giờ. Không sửa ngày/hạng mục trong V0.5.</p>
+
+            <label>Mã phiếu</label>
+            <input id="editPhieuId" type="text" readonly>
+
+            <label>Hạng mục</label>
+            <input id="editHangMuc" type="text" readonly>
+
+            <label>Nội dung công việc</label>
+            <textarea id="editNoiDungCongViec" rows="3"></textarea>
+
+            <div class="row-title">
+              <h3>Nhân viên trong phiếu</h3>
+              <button type="button" onclick="addEditEmployeeRow()">+ Thêm dòng</button>
+            </div>
+            <div id="editEmployeeRows"></div>
+
+            <label>Lý do sửa</label>
+            <textarea id="editReason" rows="2" placeholder="Bắt buộc nhập lý do sửa"></textarea>
+
+            <div class="edit-actions">
+              <button class="save" type="button" onclick="saveEntryEdit()">Lưu sửa phiếu</button>
+              <button class="secondary" type="button" onclick="cancelEntryEdit()">Hủy sửa</button>
+            </div>
+            <p id="editMessage"></p>
+          </div>
         </section>
 
       </main>

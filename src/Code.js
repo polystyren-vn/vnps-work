@@ -71,3 +71,11 @@ function apiListWorkEntries(payload) {
 function apiSoftDeleteWorkEntry(payload) {
   return softDeleteWorkEntry(payload);
 }
+
+function apiGetWorkEntryDetail(payload) {
+  return getWorkEntryDetailForEdit(payload);
+}
+
+function apiUpdateWorkEntry(payload) {
+  return updateWorkEntryDetail(payload);
+}

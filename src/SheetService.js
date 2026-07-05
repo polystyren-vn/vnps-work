@@ -112,3 +112,30 @@ function updateObjectByRowNumber_(sheetName, rowNumber, patch) {
   });
   SpreadsheetApp.flush();
 }
+
+/**
+ * V0.5: xóa vật lý các dòng chi tiết theo điều kiện kỹ thuật.
+ * Chỉ dùng cho DATA_NHAN_SU_CONG_VIEC khi sửa phiếu:
+ * - Header phiếu vẫn giữ nguyên.
+ * - Chi tiết cũ được thay bằng chi tiết mới.
+ * - LOG_THAO_TAC vẫn ghi truy vết SUA_PHIEU.
+ */
+function deleteRowsWhere_(sheetName, predicate) {
+  const sh = getSheet_(sheetName);
+  const meta = getHeaderMap_(sheetName);
+  const startRow = meta.headerRow + 1;
+  const lastRow = sh.getLastRow();
+  if (lastRow < startRow) return 0;
+
+  const values = sh.getRange(startRow, 1, lastRow - startRow + 1, meta.headers.length).getValues();
+  const rowsToDelete = [];
+  values.forEach((row, idx) => {
+    const obj = { __rowNumber: startRow + idx };
+    meta.headers.forEach((h, colIdx) => obj[h] = row[colIdx]);
+    if (predicate(obj)) rowsToDelete.push(obj.__rowNumber);
+  });
+
+  rowsToDelete.sort((a, b) => b - a).forEach(rowNumber => sh.deleteRow(rowNumber));
+  if (rowsToDelete.length) SpreadsheetApp.flush();
+  return rowsToDelete.length;
+}

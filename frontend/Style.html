@@ -172,3 +172,46 @@
     input, select, textarea { font-size: 17px; padding: 11px; }
   }
 </style>
+
+<style>
+  /* V0.5_EDIT_ENTRY_DETAIL */
+  .entry-edit {
+    margin-top: 14px;
+    border: 1px solid #99f6e4;
+    background: #f0fdfa;
+    border-radius: 12px;
+    padding: 12px;
+  }
+  .entry-card .entry-actions {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+  .edit-entry {
+    background: #2563eb;
+  }
+  .edit-emp-row {
+    display: grid;
+    grid-template-columns: 1fr 120px 52px;
+    gap: 8px;
+    margin-top: 8px;
+    align-items: center;
+  }
+  .edit-emp-row button {
+    background: #ef4444;
+    padding: 12px 0;
+  }
+  .edit-actions {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+    margin-top: 12px;
+  }
+  .secondary {
+    background: #64748b;
+  }
+  @media (max-width: 520px) {
+    .edit-emp-row { grid-template-columns: 1fr 92px 46px; }
+    .edit-actions { grid-template-columns: 1fr; }
+  }
+</style>
