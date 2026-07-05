@@ -1,0 +1,16 @@
+{
+  "name": "vnps-work",
+  "version": "0.1.0",
+  "private": true,
+  "description": "VNPS Work Assign - Google Apps Script web app + Google Sheet database",
+  "scripts": {
+    "login": "clasp login",
+    "push": "clasp push",
+    "pull": "clasp pull",
+    "open": "clasp open",
+    "deploy": "clasp deploy --description \"VNPS Work Assign\""
+  },
+  "devDependencies": {
+    "@google/clasp": "^3.0.0-alpha"
+  }
+}

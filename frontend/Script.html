@@ -1,0 +1,256 @@
+<script>
+  const state = {
+    deviceId: window.__DEVICE_ID__ || '',
+    context: null,
+    jobs: [],
+    employees: []
+  };
+
+  function todayText() {
+    const d = new Date();
+    return d.toISOString().slice(0, 10);
+  }
+
+  function setMessage(text, ok) {
+    const el = document.getElementById('message');
+    el.textContent = text || '';
+    el.className = ok ? 'ok' : 'error';
+  }
+
+  function setRegisterMessage(text, type) {
+    const el = document.getElementById('registerMessage');
+    el.textContent = text || '';
+    el.className = type || 'error';
+  }
+
+  function hideAllAreas() {
+    ['blocked', 'registerArea', 'pendingArea', 'formArea'].forEach(id => {
+      const el = document.getElementById(id);
+      if (el) el.classList.add('hidden');
+    });
+  }
+
+  function init() {
+    document.getElementById('ngay').value = todayText();
+
+    if (!state.deviceId) {
+      showBlocked('Thiếu DeviceID. Hãy mở link có dạng ?deviceId=PC_TO_01');
+      return;
+    }
+
+    google.script.run
+      .withSuccessHandler(res => {
+        if (!res.ok) {
+          handleInitBlocked(res);
+          return;
+        }
+        state.context = res.context;
+        state.jobs = res.jobs || [];
+        state.employees = res.employees || [];
+        renderForm();
+      })
+      .withFailureHandler(err => showBlocked(err.message))
+      .apiInit(state.deviceId, document.getElementById('ngay').value);
+  }
+
+  function handleInitBlocked(res) {
+    if (res.canRegister || res.code === 'DEVICE_NOT_REGISTERED') {
+      showRegisterDevice(res.deviceId || state.deviceId, res.reason);
+      return;
+    }
+
+    if (res.code === 'DEVICE_PENDING') {
+      showPending(res.reason);
+      return;
+    }
+
+    showBlocked(res.reason);
+  }
+
+  function showBlocked(reason) {
+    hideAllAreas();
+    document.getElementById('status').textContent = 'Bị chặn truy cập';
+    document.getElementById('blockedReason').textContent = reason || 'Không rõ lý do.';
+    document.getElementById('blocked').classList.remove('hidden');
+  }
+
+  function showRegisterDevice(deviceId, reason) {
+    hideAllAreas();
+    document.getElementById('status').textContent = 'Thiết bị chưa đăng ký';
+    document.getElementById('regDeviceId').value = deviceId || state.deviceId;
+    setRegisterMessage(reason || 'Vui lòng gửi thông tin đăng ký thiết bị.', 'warn');
+    document.getElementById('registerArea').classList.remove('hidden');
+  }
+
+  function showPending(reason) {
+    hideAllAreas();
+    document.getElementById('status').textContent = 'Chờ duyệt thiết bị';
+    document.getElementById('pendingReason').textContent = reason || 'Thiết bị đang chờ duyệt.';
+    document.getElementById('pendingArea').classList.remove('hidden');
+  }
+
+  function submitDeviceRegister() {
+    const payload = {
+      deviceId: document.getElementById('regDeviceId').value,
+      tenThietBi: document.getElementById('regTenThietBi').value,
+      soTheDangKy: document.getElementById('regSoThe').value,
+      ghiChu: document.getElementById('regGhiChu').value
+    };
+
+    if (!payload.tenThietBi.trim()) {
+      setRegisterMessage('Vui lòng nhập tên thiết bị.', 'error');
+      return;
+    }
+    if (!payload.soTheDangKy.trim()) {
+      setRegisterMessage('Vui lòng nhập số thẻ đăng ký.', 'error');
+      return;
+    }
+
+    setRegisterMessage('Đang gửi đăng ký thiết bị...', 'ok');
+
+    google.script.run
+      .withSuccessHandler(res => {
+        if (!res.ok) {
+          setRegisterMessage(res.reason || 'Không đăng ký được thiết bị.', 'error');
+          return;
+        }
+        showPending(res.reason || 'Đã gửi đăng ký thiết bị. Vui lòng chờ duyệt.');
+      })
+      .withFailureHandler(err => setRegisterMessage(err.message, 'error'))
+      .apiRegisterDevice(payload);
+  }
+
+  function renderForm() {
+    hideAllAreas();
+    document.getElementById('status').textContent = 'Thiết bị hợp lệ';
+    document.getElementById('formArea').classList.remove('hidden');
+    document.getElementById('userInfo').textContent =
+      `Thiết bị: ${state.context.deviceId} · Người nhập: ${state.context.soThe} - ${state.context.hoTen} · Quyền: ${state.context.viTri}`;
+
+    const jobSelect = document.getElementById('maCongViec');
+    jobSelect.innerHTML = '<option value="">-- Chọn hạng mục --</option>';
+    state.jobs.forEach(j => {
+      const opt = document.createElement('option');
+      opt.value = j.maCongViec;
+      opt.textContent = `${j.maCongViec} · ${j.hangMuc}`;
+      jobSelect.appendChild(opt);
+    });
+    jobSelect.onchange = () => {
+      document.getElementById('newJobBox').classList.toggle(
+        'hidden',
+        jobSelect.value !== window.__ADD_NEW_JOB_VALUE__
+      );
+    };
+
+    document.getElementById('ngay').onchange = reloadEmployees;
+    document.getElementById('employeeRows').innerHTML = '';
+    addEmployeeRow();
+  }
+
+  function reloadEmployees() {
+    google.script.run
+      .withSuccessHandler(res => {
+        if (!res.ok) {
+          setMessage(res.reason, false);
+          return;
+        }
+        state.employees = res.employees || [];
+        document.getElementById('employeeRows').innerHTML = '';
+        addEmployeeRow();
+      })
+      .withFailureHandler(err => setMessage(err.message, false))
+      .apiGetAvailableEmployees(state.deviceId, document.getElementById('ngay').value);
+  }
+
+  function buildEmployeeOptions() {
+    return '<option value="">-- Số thẻ --</option>' + state.employees.map(e =>
+      `<option value="${e.soThe}" data-conlai="${e.conLai}">${e.soThe} · còn ${e.conLai}h</option>`
+    ).join('');
+  }
+
+  function buildHourOptions(max) {
+    let html = '<option value="">Giờ</option>';
+    const limit = Math.max(1, Math.min(Number(max || 8), 8));
+    for (let i = 1; i <= limit; i++) html += `<option value="${i}">${i}h</option>`;
+    return html;
+  }
+
+  function addEmployeeRow() {
+    const wrap = document.getElementById('employeeRows');
+    const row = document.createElement('div');
+    row.className = 'emp-row';
+    row.innerHTML = `
+      <select class="emp" name="soThe">${buildEmployeeOptions()}</select>
+      <select class="hours" name="soGio">${buildHourOptions(8)}</select>
+      <button type="button">×</button>
+    `;
+    const emp = row.querySelector('.emp');
+    const hours = row.querySelector('.hours');
+    emp.onchange = () => {
+      const opt = emp.options[emp.selectedIndex];
+      const max = Number(opt.dataset.conlai || 8);
+      hours.innerHTML = buildHourOptions(max);
+    };
+    row.querySelector('button').onclick = () => row.remove();
+    wrap.appendChild(row);
+  }
+
+  function collectPayload() {
+    const rows = Array.from(document.querySelectorAll('#employeeRows .emp-row'));
+    const nhanSu = [];
+    const seen = {};
+
+    rows.forEach(row => {
+      const soThe = row.querySelector('select[name="soThe"]').value;
+      const soGio = Number(row.querySelector('select[name="soGio"]').value);
+      if (!soThe && !soGio) return;
+      if (!soThe || !soGio) {
+        throw new Error('Có dòng nhân viên chưa chọn đủ số thẻ và số giờ.');
+      }
+      if (seen[soThe]) {
+        throw new Error(`Số thẻ ${soThe} bị chọn trùng trong cùng phiếu. Hãy gộp giờ vào một dòng.`);
+      }
+      seen[soThe] = true;
+      nhanSu.push({ soThe, soGio });
+    });
+
+    if (!nhanSu.length) {
+      throw new Error('Chưa chọn nhân viên tham gia.');
+    }
+
+    return {
+      deviceId: state.deviceId,
+      ngay: document.getElementById('ngay').value,
+      maCongViec: document.getElementById('maCongViec').value,
+      hangMucMoi: document.getElementById('hangMucMoi').value,
+      noiDungCongViec: document.getElementById('noiDungCongViec').value,
+      nhanSu,
+      // V0.1.1/V0.2: gửi thêm JSON dự phòng để backend luôn nhận đủ nhiều nhân viên.
+      nhanSuJson: JSON.stringify(nhanSu)
+    };
+  }
+
+  function saveForm() {
+    let payload;
+    try {
+      payload = collectPayload();
+    } catch (err) {
+      setMessage(err.message, false);
+      return;
+    }
+
+    setMessage(`Đang lưu ${payload.nhanSu.length} nhân viên...`, true);
+
+    google.script.run
+      .withSuccessHandler(res => {
+        setMessage(`Đã lưu: ${res.phieuId} · ${res.soDongNhanSu} nhân viên`, true);
+        document.getElementById('noiDungCongViec').value = '';
+        document.getElementById('hangMucMoi').value = '';
+        reloadEmployees();
+      })
+      .withFailureHandler(err => setMessage(err.message, false))
+      .apiSaveWorkEntry(payload);
+  }
+
+  window.addEventListener('load', init);
+</script>

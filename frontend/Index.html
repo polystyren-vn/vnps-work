@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <base target="_top">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <?!= include('frontend/Style'); ?>
+  </head>
+  <body>
+    <div class="app">
+      <header class="header">
+        <div>
+          <h1>VNPS WORK ASSIGN</h1>
+          <p id="status">Đang kiểm tra thiết bị...</p>
+        </div>
+        <div class="version"><?= appVersion ?></div>
+      </header>
+
+      <main id="blocked" class="card hidden">
+        <h2>Không thể vào form</h2>
+        <p id="blockedReason"></p>
+      </main>
+
+      <main id="registerArea" class="card hidden">
+        <h2>Đăng ký thiết bị</h2>
+        <p class="hint">Thiết bị này chưa có trong danh sách được phép sử dụng. Sau khi gửi đăng ký, quản lý cần duyệt trong sheet <b>DM_THIET_BI</b>.</p>
+
+        <label>DeviceID</label>
+        <input id="regDeviceId" type="text" readonly>
+
+        <label>Tên thiết bị</label>
+        <input id="regTenThietBi" type="text" placeholder="Ví dụ: Máy tổ 1, Điện thoại QL ca A">
+
+        <label>Số thẻ đăng ký</label>
+        <input id="regSoThe" type="text" inputmode="numeric" placeholder="Nhập số thẻ người phụ trách">
+
+        <label>Ghi chú</label>
+        <textarea id="regGhiChu" rows="2" placeholder="Không bắt buộc"></textarea>
+
+        <button class="save" type="button" onclick="submitDeviceRegister()">Gửi đăng ký thiết bị</button>
+        <p id="registerMessage"></p>
+      </main>
+
+      <main id="pendingArea" class="card pending hidden">
+        <h2>Thiết bị đang chờ duyệt</h2>
+        <p id="pendingReason"></p>
+        <p>Hãy báo quản lý đổi trạng thái thiết bị trong <b>DM_THIET_BI</b> từ <b>Chờ duyệt</b> sang <b>Hoạt động</b>, sau đó tải lại form.</p>
+      </main>
+
+      <main id="formArea" class="card hidden">
+        <div class="userbar">
+          <span id="userInfo"></span>
+        </div>
+
+        <label>Ngày</label>
+        <input id="ngay" type="date">
+
+        <label>Hạng mục công việc</label>
+        <select id="maCongViec"></select>
+
+        <div id="newJobBox" class="hidden">
+          <label>Nhập hạng mục mới</label>
+          <input id="hangMucMoi" type="text" placeholder="Nhập hạng mục phát sinh">
+        </div>
+
+        <label>Nội dung công việc</label>
+        <textarea id="noiDungCongViec" rows="3" placeholder="Ghi nội dung chung cho hạng mục"></textarea>
+
+        <div class="row-title">
+          <h3>Nhân viên tham gia</h3>
+          <button type="button" onclick="addEmployeeRow()">+ Thêm nhân viên</button>
+        </div>
+        <div id="employeeRows"></div>
+
+        <button class="save" type="button" onclick="saveForm()">Lưu công việc</button>
+        <p id="message"></p>
+      </main>
+    </div>
+
+    <script>
+      window.__DEVICE_ID__ = '<?= deviceId ?>';
+      window.__ADD_NEW_JOB_VALUE__ = '<?= APP.ADD_NEW_JOB_VALUE ?>';
+    </script>
+    <?!= include('frontend/Script'); ?>
+  </body>
+</html>

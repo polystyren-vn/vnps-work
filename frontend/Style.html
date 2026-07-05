@@ -1,0 +1,125 @@
+<style>
+  :root {
+    --primary: #0f766e;
+    --dark: #134e4a;
+    --bg: #f1f5f9;
+    --card: #ffffff;
+    --line: #cbd5e1;
+    --danger: #b91c1c;
+    --warning: #b45309;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: Arial, sans-serif;
+    background: var(--bg);
+    color: #0f172a;
+    font-size: 17px;
+  }
+  .app {
+    max-width: 760px;
+    margin: 0 auto;
+    padding: 12px;
+  }
+  .header {
+    background: var(--dark);
+    color: #fff;
+    padding: 14px;
+    border-radius: 12px;
+    display: flex;
+    justify-content: space-between;
+    gap: 8px;
+    align-items: center;
+  }
+  h1 { margin: 0 0 4px; font-size: 24px; }
+  .version { font-size: 12px; opacity: .8; text-align: right; }
+  .card {
+    margin-top: 12px;
+    background: var(--card);
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    padding: 14px;
+    box-shadow: 0 1px 3px rgba(15,23,42,.1);
+  }
+  .hidden { display: none; }
+  .hint {
+    background: #ecfdf5;
+    border: 1px solid #a7f3d0;
+    color: #065f46;
+    padding: 10px;
+    border-radius: 10px;
+  }
+  .pending {
+    border-color: #f59e0b;
+    background: #fffbeb;
+  }
+  label {
+    display: block;
+    font-weight: bold;
+    margin-top: 14px;
+    margin-bottom: 6px;
+  }
+  input, select, textarea {
+    width: 100%;
+    font-size: 18px;
+    padding: 12px;
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    background: #fff;
+  }
+  input[readonly] {
+    background: #e2e8f0;
+    color: #334155;
+    font-weight: bold;
+  }
+  textarea { resize: vertical; }
+  .userbar {
+    background: #ecfdf5;
+    color: #065f46;
+    border: 1px solid #a7f3d0;
+    padding: 10px;
+    border-radius: 10px;
+  }
+  .row-title {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-top: 12px;
+  }
+  .row-title h3 { margin: 0; }
+  button {
+    border: 0;
+    border-radius: 10px;
+    padding: 12px 14px;
+    font-size: 17px;
+    font-weight: bold;
+    background: var(--primary);
+    color: #fff;
+  }
+  .save {
+    width: 100%;
+    margin-top: 18px;
+    font-size: 20px;
+    padding: 15px;
+  }
+  .emp-row {
+    display: grid;
+    grid-template-columns: 1fr 120px 52px;
+    gap: 8px;
+    margin-top: 8px;
+    align-items: center;
+  }
+  .emp-row button {
+    background: #ef4444;
+    padding: 12px 0;
+  }
+  #message, #registerMessage { font-weight: bold; }
+  .error { color: var(--danger); }
+  .ok { color: var(--primary); }
+  .warn { color: var(--warning); }
+  @media (max-width: 520px) {
+    body { font-size: 16px; }
+    .emp-row { grid-template-columns: 1fr 92px 46px; }
+    input, select, textarea { font-size: 17px; padding: 11px; }
+  }
+</style>
