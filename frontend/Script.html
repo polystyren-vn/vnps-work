@@ -23,6 +23,13 @@
     el.className = type || 'error';
   }
 
+  function setReportMessage(text, ok) {
+    const el = document.getElementById('reportMessage');
+    if (!el) return;
+    el.textContent = text || '';
+    el.className = ok ? 'ok' : 'error';
+  }
+
   function hideAllAreas() {
     ['blocked', 'registerArea', 'pendingArea', 'formArea'].forEach(id => {
       const el = document.getElementById(id);
@@ -126,6 +133,13 @@
     document.getElementById('formArea').classList.remove('hidden');
     document.getElementById('userInfo').textContent =
       `Thiết bị: ${state.context.deviceId} · Người nhập: ${state.context.soThe} - ${state.context.hoTen} · Quyền: ${state.context.viTri}`;
+
+    const reportBox = document.getElementById('reportBox');
+    if (reportBox) {
+      reportBox.classList.toggle('hidden', !state.context.isQL);
+      document.getElementById('reportFromDate').value = document.getElementById('ngay').value || todayText();
+      document.getElementById('reportToDate').value = document.getElementById('ngay').value || todayText();
+    }
 
     const jobSelect = document.getElementById('maCongViec');
     jobSelect.innerHTML = '<option value="">-- Chọn hạng mục --</option>';
@@ -250,6 +264,41 @@
       })
       .withFailureHandler(err => setMessage(err.message, false))
       .apiSaveWorkEntry(payload);
+  }
+
+
+  function generateReports() {
+    if (!state.context || !state.context.isQL) {
+      setReportMessage('Chỉ QL được tạo báo cáo.', false);
+      return;
+    }
+
+    const payload = {
+      deviceId: state.deviceId,
+      fromDate: document.getElementById('reportFromDate').value,
+      toDate: document.getElementById('reportToDate').value
+    };
+
+    if (!payload.fromDate || !payload.toDate) {
+      setReportMessage('Vui lòng chọn đủ từ ngày và đến ngày.', false);
+      return;
+    }
+
+    setReportMessage('Đang tạo báo cáo...', true);
+
+    google.script.run
+      .withSuccessHandler(res => {
+        if (!res.ok) {
+          setReportMessage(res.reason || 'Không tạo được báo cáo.', false);
+          return;
+        }
+        setReportMessage(
+          `Đã tạo báo cáo ${res.fromDate} → ${res.toDate}. Nhân viên: ${res.employeeRows} dòng, hạng mục: ${res.jobRows} dòng.`,
+          true
+        );
+      })
+      .withFailureHandler(err => setReportMessage(err.message, false))
+      .apiGenerateReports(payload);
   }
 
   window.addEventListener('load', init);

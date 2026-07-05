@@ -73,6 +73,22 @@
 
         <button class="save" type="button" onclick="saveForm()">Lưu công việc</button>
         <p id="message"></p>
+
+        <section id="reportBox" class="report-box hidden">
+          <div class="row-title">
+            <h3>Báo cáo</h3>
+          </div>
+          <p class="hint">Chỉ QL được tạo báo cáo. Báo cáo sẽ ghi vào 2 sheet: <b>REPORT_NHAN_VIEN_NGAY</b> và <b>REPORT_HANG_MUC_NGAY</b>.</p>
+
+          <label>Từ ngày</label>
+          <input id="reportFromDate" type="date">
+
+          <label>Đến ngày</label>
+          <input id="reportToDate" type="date">
+
+          <button class="report" type="button" onclick="generateReports()">Tạo báo cáo</button>
+          <p id="reportMessage"></p>
+        </section>
       </main>
     </div>
 

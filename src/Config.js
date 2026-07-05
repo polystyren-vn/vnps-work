@@ -1,10 +1,10 @@
 /**
  * VNPS Work Assign - Config
- * Version: V0.2_DEVICE_REGISTER_FLOW
+ * Version: V0.3_REPORT_BASIC
  */
 const APP = {
   NAME: 'VNPS_WORK_ASSIGN_APP',
-  VERSION: 'V0.2_DEVICE_REGISTER_FLOW',
+  VERSION: 'V0.3_REPORT_BASIC',
   TIMEZONE: 'Asia/Ho_Chi_Minh',
   MAX_HOURS_PER_DAY: 8,
   ADD_NEW_JOB_VALUE: '__ADD_NEW_JOB__',
@@ -30,7 +30,9 @@ const HEADERS = {
   DM_THIET_BI: ['DeviceID','TenThietBi','SoTheDangKy','TrangThai','NgayDangKy','GhiChu'],
   DATA_CONG_VIEC: ['PhieuID','Ngay','MaCongViec','HangMuc','NoiDungCongViec','NguoiNhap','DeviceID','ThoiGianLuu'],
   DATA_NHAN_SU_CONG_VIEC: ['ID','PhieuID','Ngay','MaCongViec','SoThe','SoGio'],
-  LOG_THAO_TAC: ['LogID','ThoiGian','DeviceID','SoThe','HanhDong','NoiDung']
+  LOG_THAO_TAC: ['LogID','ThoiGian','DeviceID','SoThe','HanhDong','NoiDung'],
+  REPORT_NHAN_VIEN_NGAY: ['Ngay','SoThe','HoTen','TongGio','ChiTietCongViec','TrangThaiGio'],
+  REPORT_HANG_MUC_NGAY: ['STT','HangMuc']
 };
 
 function getSpreadsheetId_() {

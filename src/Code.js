@@ -59,3 +59,7 @@ function apiRegisterDevice(payload) {
 function apiSaveWorkEntry(payload) {
   return saveWorkEntry(payload);
 }
+
+function apiGenerateReports(payload) {
+  return generateBasicReports(payload);
+}
