@@ -109,7 +109,7 @@
 
             <div id="entryEditBox" class="entry-edit hidden">
               <h3>Sửa phiếu</h3>
-              <p class="hint">Chỉ sửa nội dung công việc, nhân viên và số giờ. Không sửa ngày/hạng mục trong V0.6.</p>
+              <p class="hint">Chỉ sửa nội dung công việc, nhân viên và số giờ. Không sửa ngày/hạng mục trong V0.7.</p>
 
               <label>Mã phiếu</label>
               <input id="editPhieuId" type="text" readonly>
@@ -134,6 +134,36 @@
                 <button class="secondary" type="button" onclick="cancelEntryEdit()">Hủy sửa</button>
               </div>
               <p id="editMessage" class="message-line"></p>
+            </div>
+          </div>
+        </section>
+
+        <section id="dailyBox" class="section-card daily-box hidden collapsed">
+          <button class="section-toggle" type="button" onclick="toggleSection('dailyBox')">
+            <span>
+              <span class="section-title">✅ Kiểm tra / chốt ngày</span>
+              <span class="section-subtitle">QL kiểm tra tổng giờ nhân viên và xác nhận dữ liệu ngày</span>
+            </span>
+            <span class="section-state">Mở</span>
+          </button>
+
+          <div class="section-body">
+            <p class="hint">Khi ngày đã <b>xác nhận</b>, hệ thống sẽ chặn lưu phiếu mới, sửa phiếu và hủy phiếu. Nếu cần chỉnh dữ liệu, QL phải <b>mở lại ngày</b> và nhập lý do.</p>
+
+            <label>Ngày cần kiểm tra/chốt</label>
+            <input id="dailyDate" type="date">
+
+            <button class="daily" type="button" onclick="loadDailyConfirmInfo()">Kiểm tra tổng giờ trong ngày</button>
+            <p id="dailyMessage" class="message-line"></p>
+
+            <div id="dailySummary" class="daily-summary"></div>
+
+            <label>Ghi chú xác nhận / lý do mở lại</label>
+            <textarea id="dailyNote" rows="2" placeholder="Ghi chú khi xác nhận hoặc lý do khi mở lại ngày"></textarea>
+
+            <div class="daily-actions">
+              <button id="dailyConfirmBtn" class="save" type="button" onclick="confirmDaily()">Xác nhận/chốt ngày</button>
+              <button id="dailyReopenBtn" class="secondary" type="button" onclick="reopenDaily()">Mở lại ngày</button>
             </div>
           </div>
         </section>

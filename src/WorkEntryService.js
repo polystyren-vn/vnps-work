@@ -114,6 +114,9 @@ function saveWorkEntry(payload) {
     const context = getDeviceContext(payload.deviceId);
     if (!context.ok) throw new Error(context.reason);
 
+    // V0.7: ngày đã xác nhận/chốt thì không được phát sinh phiếu mới.
+    assertDailyOpenForChange_(payload.ngay, 'lưu phiếu mới');
+
     const job = resolveJobForSave_(payload, context);
     const used = getUsedHoursByDate_(payload.ngay);
 

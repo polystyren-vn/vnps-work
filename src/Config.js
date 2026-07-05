@@ -1,10 +1,10 @@
 /**
  * VNPS Work Assign - Config
- * Version: V0.6_UI_MOBILE_CLEANUP
+ * Version: V0.7_DAILY_LOCK_AND_CONFIRM_FLOW
  */
 const APP = {
   NAME: 'VNPS_WORK_ASSIGN_APP',
-  VERSION: 'V0.6_UI_MOBILE_CLEANUP',
+  VERSION: 'V0.7_DAILY_LOCK_AND_CONFIRM_FLOW',
   TIMEZONE: 'Asia/Ho_Chi_Minh',
   MAX_HOURS_PER_DAY: 8,
   ADD_NEW_JOB_VALUE: '__ADD_NEW_JOB__',
@@ -12,7 +12,9 @@ const APP = {
   DEVICE_STATUS_PENDING: 'Chờ duyệt',
   DEVICE_STATUS_LOCKED: 'Khóa',
   ENTRY_STATUS_ACTIVE: 'ACTIVE',
-  ENTRY_STATUS_DELETED: 'DELETED'
+  ENTRY_STATUS_DELETED: 'DELETED',
+  DAY_STATUS_DRAFT: 'DRAFT',
+  DAY_STATUS_CONFIRMED: 'CONFIRMED'
 };
 
 const SHEETS = {
@@ -21,6 +23,7 @@ const SHEETS = {
   DM_THIET_BI: 'DM_THIET_BI',
   DATA_CONG_VIEC: 'DATA_CONG_VIEC',
   DATA_NHAN_SU_CONG_VIEC: 'DATA_NHAN_SU_CONG_VIEC',
+  DATA_CHOT_NGAY: 'DATA_CHOT_NGAY',
   REPORT_HANG_MUC_NGAY: 'REPORT_HANG_MUC_NGAY',
   REPORT_NHAN_VIEN_NGAY: 'REPORT_NHAN_VIEN_NGAY',
   LOG_THAO_TAC: 'LOG_THAO_TAC'
@@ -32,6 +35,7 @@ const HEADERS = {
   DM_THIET_BI: ['DeviceID','TenThietBi','SoTheDangKy','TrangThai','NgayDangKy','GhiChu'],
   DATA_CONG_VIEC: ['PhieuID','Ngay','MaCongViec','HangMuc','NoiDungCongViec','NguoiNhap','DeviceID','ThoiGianLuu','TrangThai','HuyBoi','ThoiGianHuy','LyDoHuy','SuaBoi','ThoiGianSua','LyDoSua'],
   DATA_NHAN_SU_CONG_VIEC: ['ID','PhieuID','Ngay','MaCongViec','SoThe','SoGio'],
+  DATA_CHOT_NGAY: ['Ngay','TrangThai','XacNhanBoi','ThoiGianXacNhan','GhiChu','MoLaiBoi','ThoiGianMoLai','LyDoMoLai'],
   LOG_THAO_TAC: ['LogID','ThoiGian','DeviceID','SoThe','HanhDong','NoiDung'],
   REPORT_NHAN_VIEN_NGAY: ['Ngay','SoThe','HoTen','TongGio','ChiTietCongViec','TrangThaiGio'],
   REPORT_HANG_MUC_NGAY: ['STT','HangMuc']

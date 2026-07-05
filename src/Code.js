@@ -79,3 +79,15 @@ function apiGetWorkEntryDetail(payload) {
 function apiUpdateWorkEntry(payload) {
   return updateWorkEntryDetail(payload);
 }
+
+function apiGetDailyConfirmInfo(payload) {
+  return getDailyConfirmInfo(payload);
+}
+
+function apiConfirmDaily(payload) {
+  return confirmDaily(payload);
+}
+
+function apiReopenDaily(payload) {
+  return reopenDaily(payload);
+}

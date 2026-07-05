@@ -1,6 +1,6 @@
 /**
  * VNPS Work Assign - EntryManageService
- * Version: V0.5_EDIT_ENTRY_DETAIL
+ * Version: V0.7_DAILY_LOCK_AND_CONFIRM_FLOW
  *
  * Phạm vi:
  * - Quản lý phiếu cho QL.
@@ -243,6 +243,8 @@ function updateWorkEntryDetail(payload) {
     if (!isActiveWorkEntry_(row)) throw new Error('Phiếu đã hủy, không được sửa.');
 
     const ngayKey = dateKey_(row.Ngay);
+    // V0.7: ngày đã xác nhận/chốt thì phải mở lại trước khi sửa phiếu.
+    assertDailyOpenForChange_(ngayKey, 'sửa phiếu');
     const maCongViec = String(row.MaCongViec || '').trim();
     const activeEmployeeMap = {};
     listActiveEmployees().forEach(e => activeEmployeeMap[e.soThe] = true);
@@ -323,6 +325,9 @@ function softDeleteWorkEntry(payload) {
     if (currentStatus === APP.ENTRY_STATUS_DELETED) {
       throw new Error('Phiếu này đã được hủy trước đó.');
     }
+
+    // V0.7: ngày đã xác nhận/chốt thì phải mở lại trước khi hủy phiếu.
+    assertDailyOpenForChange_(row.Ngay, 'hủy phiếu');
 
     updateObjectByRowNumber_(SHEETS.DATA_CONG_VIEC, row.__rowNumber, {
       TrangThai: APP.ENTRY_STATUS_DELETED,

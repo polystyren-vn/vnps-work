@@ -228,7 +228,7 @@
     font-size: 20px;
     padding: 15px;
   }
-  .report, .manage {
+  .report, .manage, .daily {
     width: 100%;
     margin-top: 18px;
     font-size: 19px;
@@ -282,6 +282,77 @@
   .entry-actions button { flex: 1 1 150px; }
   .delete-entry { background: #dc2626; }
   .edit-entry { background: var(--blue); }
+  button:disabled {
+    background: #94a3b8 !important;
+    cursor: not-allowed;
+    opacity: .72;
+  }
+
+  .daily-actions {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+    margin-top: 12px;
+  }
+  .daily-actions .save { margin-top: 0; }
+  .daily-summary { margin-top: 12px; }
+  .daily-status-card {
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    padding: 12px;
+    background: #f8fafc;
+    margin-top: 10px;
+  }
+  .daily-status-card.confirmed {
+    border-color: #86efac;
+    background: #f0fdf4;
+    color: #14532d;
+  }
+  .daily-status-card.draft {
+    border-color: #fde68a;
+    background: #fffbeb;
+    color: #78350f;
+  }
+  .daily-status-card small { display: block; margin-top: 4px; }
+  .daily-counts {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+    margin-top: 10px;
+  }
+  .daily-counts span {
+    background: #fff;
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    padding: 8px;
+    font-size: 14px;
+  }
+  .daily-employee-list { margin-top: 10px; }
+  .daily-employee {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 88px;
+    gap: 8px;
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    padding: 10px;
+    margin-top: 8px;
+    background: #fff;
+  }
+  .daily-employee.ok-hours { border-color: #86efac; background: #f0fdf4; }
+  .daily-employee.short-hours { border-color: #fde68a; background: #fffbeb; }
+  .daily-employee.over-hours { border-color: #fecaca; background: #fef2f2; }
+  .daily-detail {
+    margin-top: 4px;
+    color: #475569;
+    font-size: 14px;
+    overflow-wrap: anywhere;
+  }
+  .daily-hours {
+    text-align: right;
+    align-self: center;
+  }
+  .daily-hours b, .daily-hours span { display: block; }
+  .daily-hours span { font-size: 13px; color: #475569; }
 
   .entry-edit {
     margin-top: 14px;
@@ -346,8 +417,11 @@
     .section-body { padding: 0 12px 12px; }
     input, select, textarea { font-size: 17px; padding: 11px; }
     .emp-row, .edit-emp-row { grid-template-columns: minmax(0, 1fr) 88px 44px; gap: 6px; }
-    .edit-actions { grid-template-columns: 1fr; }
+    .edit-actions, .daily-actions { grid-template-columns: 1fr; }
     .entry-actions { display: grid; grid-template-columns: 1fr; }
+    .daily-counts { grid-template-columns: 1fr; }
+    .daily-employee { grid-template-columns: 1fr; }
+    .daily-hours { text-align: left; }
     .small-action { padding-left: 10px; padding-right: 10px; }
   }
 

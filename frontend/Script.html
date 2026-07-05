@@ -6,6 +6,8 @@
     jobs: [],
     employees: [],
     entries: [],
+    dailyStatus: null,
+    dailySummary: null,
     editEmployees: [],
     editingEntry: null
   };
@@ -29,6 +31,13 @@
 
   function setReportMessage(text, ok) {
     const el = document.getElementById('reportMessage');
+    if (!el) return;
+    el.textContent = text || '';
+    el.className = ok ? 'ok' : 'error';
+  }
+
+  function setDailyMessage(text, ok) {
+    const el = document.getElementById('dailyMessage');
     if (!el) return;
     el.textContent = text || '';
     el.className = ok ? 'ok' : 'error';
@@ -72,6 +81,7 @@
   function resetMobileSections() {
     setSectionCollapsed('workSection', false);
     setSectionCollapsed('manageBox', true);
+    setSectionCollapsed('dailyBox', true);
     setSectionCollapsed('reportBox', true);
   }
 
@@ -192,6 +202,13 @@
     if (manageBox) {
       manageBox.classList.toggle('hidden', !state.context.isQL);
       document.getElementById('manageDate').value = document.getElementById('ngay').value || todayText();
+    }
+
+    const dailyBox = document.getElementById('dailyBox');
+    if (dailyBox) {
+      dailyBox.classList.toggle('hidden', !state.context.isQL);
+      document.getElementById('dailyDate').value = document.getElementById('ngay').value || todayText();
+      renderDailySummary(null);
     }
 
     const jobSelect = document.getElementById('maCongViec');
@@ -319,6 +336,181 @@
       .apiSaveWorkEntry(payload);
   }
 
+
+
+  function loadDailyConfirmInfo() {
+    if (!state.context || !state.context.isQL) {
+      setDailyMessage('Chỉ QL được kiểm tra/chốt ngày.', false);
+      return;
+    }
+
+    const payload = {
+      deviceId: state.deviceId,
+      ngay: document.getElementById('dailyDate').value
+    };
+    if (!payload.ngay) {
+      setDailyMessage('Vui lòng chọn ngày cần kiểm tra.', false);
+      return;
+    }
+
+    setSectionCollapsed('dailyBox', false);
+    setDailyMessage('Đang kiểm tra tổng giờ trong ngày...', true);
+    renderDailySummary(null);
+
+    const dailyLoadTimer = setTimeout(() => {
+      setDailyMessage('Kiểm tra ngày quá lâu. Kiểm tra Apps Script > Executions hoặc thử tải lại.', false);
+    }, 20000);
+
+    google.script.run
+      .withSuccessHandler(res => {
+        clearTimeout(dailyLoadTimer);
+        if (!res.ok) {
+          setDailyMessage(res.reason || 'Không kiểm tra được ngày.', false);
+          return;
+        }
+        state.dailyStatus = res.status;
+        state.dailySummary = res.summary;
+        renderDailySummary(res);
+        setDailyMessage('Đã kiểm tra ngày ' + res.summary.ngay + '.', true);
+      })
+      .withFailureHandler(err => {
+        clearTimeout(dailyLoadTimer);
+        setDailyMessage(err.message, false);
+      })
+      .apiGetDailyConfirmInfo(payload);
+  }
+
+  function renderDailySummary(res) {
+    const box = document.getElementById('dailySummary');
+    if (!box) return;
+
+    const confirmBtn = document.getElementById('dailyConfirmBtn');
+    const reopenBtn = document.getElementById('dailyReopenBtn');
+    if (!res || !res.summary) {
+      box.innerHTML = '<p class="hint">Bấm kiểm tra để xem tổng giờ theo từng nhân viên trong ngày.</p>';
+      if (confirmBtn) confirmBtn.disabled = true;
+      if (reopenBtn) reopenBtn.disabled = true;
+      return;
+    }
+
+    const status = res.status || {};
+    const summary = res.summary || {};
+    const counts = summary.counts || { short: 0, ok: 0, over: 0, total: 0 };
+    const confirmed = status.trangThai === 'CONFIRMED';
+
+    if (confirmBtn) confirmBtn.disabled = confirmed || counts.over > 0;
+    if (reopenBtn) reopenBtn.disabled = !confirmed;
+
+    const statusClass = confirmed ? 'confirmed' : 'draft';
+    const statusExtra = confirmed
+      ? `Xác nhận bởi ${escapeHtml(status.xacNhanBoi || '')} · ${escapeHtml(status.thoiGianXacNhan || '')}`
+      : (status.thoiGianMoLai ? `Mở lại bởi ${escapeHtml(status.moLaiBoi || '')} · ${escapeHtml(status.thoiGianMoLai || '')}` : 'Dữ liệu còn đang nhập');
+
+    const employeeHtml = (summary.employees || []).map(e => {
+      const cls = e.statusCode === 'OK' ? 'ok-hours' : (e.statusCode === 'OVER' ? 'over-hours' : 'short-hours');
+      const detail = e.chiTiet ? escapeHtml(e.chiTiet) : 'Chưa có công việc trong ngày';
+      return `
+        <div class="daily-employee ${cls}">
+          <div>
+            <b>${escapeHtml(e.soThe)}${e.hoTen ? ' - ' + escapeHtml(e.hoTen) : ''}</b>
+            <div class="daily-detail">${detail}</div>
+          </div>
+          <div class="daily-hours">
+            <b>${Number(e.tongGio || 0)}h</b>
+            <span>${escapeHtml(e.trangThaiGio)}</span>
+          </div>
+        </div>
+      `;
+    }).join('');
+
+    box.innerHTML = `
+      <div class="daily-status-card ${statusClass}">
+        <div><b>Trạng thái ngày ${escapeHtml(summary.ngay)}</b></div>
+        <div>${escapeHtml(status.trangThaiText || '')}</div>
+        <small>${statusExtra}</small>
+      </div>
+      <div class="daily-counts">
+        <span>Phiếu active: <b>${summary.activeEntries || 0}</b></span>
+        <span>Phiếu hủy: <b>${summary.deletedEntries || 0}</b></span>
+        <span>Đủ 8h: <b>${counts.ok || 0}</b></span>
+        <span>Chưa đủ: <b>${counts.short || 0}</b></span>
+        <span>Vượt: <b>${counts.over || 0}</b></span>
+      </div>
+      ${counts.over > 0 ? '<p class="error">Còn nhân viên vượt 8h. Phải sửa dữ liệu trước khi xác nhận/chốt ngày.</p>' : ''}
+      ${confirmed ? '<p class="warn">Ngày đã xác nhận: hệ thống chặn lưu phiếu mới, sửa phiếu và hủy phiếu cho đến khi QL mở lại ngày.</p>' : ''}
+      <div class="daily-employee-list">${employeeHtml || '<p class="hint">Không có nhân viên để hiển thị.</p>'}</div>
+    `;
+  }
+
+  function confirmDaily() {
+    if (!state.context || !state.context.isQL) {
+      setDailyMessage('Chỉ QL được xác nhận ngày.', false);
+      return;
+    }
+
+    const payload = {
+      deviceId: state.deviceId,
+      ngay: document.getElementById('dailyDate').value,
+      ghiChu: document.getElementById('dailyNote').value
+    };
+    if (!payload.ngay) {
+      setDailyMessage('Vui lòng chọn ngày cần xác nhận.', false);
+      return;
+    }
+    if (!confirm('Xác nhận/chốt ngày ' + payload.ngay + '? Sau khi chốt, hệ thống sẽ chặn lưu/sửa/hủy phiếu của ngày này.')) return;
+
+    setDailyMessage('Đang xác nhận ngày...', true);
+    google.script.run
+      .withSuccessHandler(res => {
+        if (!res.ok) {
+          setDailyMessage(res.reason || 'Không xác nhận được ngày.', false);
+          return;
+        }
+        state.dailyStatus = res.status;
+        state.dailySummary = res.summary;
+        renderDailySummary(res);
+        setDailyMessage('Đã xác nhận/chốt ngày ' + res.summary.ngay + '.', true);
+      })
+      .withFailureHandler(err => setDailyMessage(err.message, false))
+      .apiConfirmDaily(payload);
+  }
+
+  function reopenDaily() {
+    if (!state.context || !state.context.isQL) {
+      setDailyMessage('Chỉ QL được mở lại ngày.', false);
+      return;
+    }
+
+    const payload = {
+      deviceId: state.deviceId,
+      ngay: document.getElementById('dailyDate').value,
+      reason: document.getElementById('dailyNote').value
+    };
+    if (!payload.ngay) {
+      setDailyMessage('Vui lòng chọn ngày cần mở lại.', false);
+      return;
+    }
+    if (!payload.reason.trim()) {
+      setDailyMessage('Vui lòng nhập lý do mở lại ngày.', false);
+      return;
+    }
+    if (!confirm('Mở lại ngày ' + payload.ngay + ' để cho phép sửa/lưu/hủy phiếu?')) return;
+
+    setDailyMessage('Đang mở lại ngày...', true);
+    google.script.run
+      .withSuccessHandler(res => {
+        if (!res.ok) {
+          setDailyMessage(res.reason || 'Không mở lại được ngày.', false);
+          return;
+        }
+        state.dailyStatus = res.status;
+        state.dailySummary = res.summary;
+        renderDailySummary(res);
+        setDailyMessage('Đã mở lại ngày ' + res.summary.ngay + '.', true);
+      })
+      .withFailureHandler(err => setDailyMessage(err.message, false))
+      .apiReopenDaily(payload);
+  }
 
   function generateReports() {
     if (!state.context || !state.context.isQL) {

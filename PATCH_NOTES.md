@@ -1,110 +1,157 @@
-# V0.6_UI_MOBILE_CLEANUP
+# VNPS WORK ASSIGN - V0.7_DAILY_LOCK_AND_CONFIRM_FLOW
 
-Baseline đầu vào: `V0.5_EDIT_ENTRY_DETAIL_TEST_PASS`
+Baseline đầu vào: `V0.6_UI_MOBILE_CLEANUP_TEST_PASS`.
 
 ## Mục tiêu
 
-Chuẩn hóa giao diện mobile cho VNPS WORK ASSIGN, vẫn giữ nguyên kiến trúc cũ:
+Thêm lớp kiểm tra/chốt dữ liệu theo ngày cho QL, phục vụ kiểm soát dữ liệu trước khi dùng báo cáo chính thức.
 
-- Người dùng truy cập qua Google Apps Script Web App URL.
-- Frontend vẫn render bởi Apps Script HTML Service.
-- Backend vẫn là Apps Script.
-- Database vẫn là Google Sheet.
-- GitHub chỉ quản lý source/version/tag.
+## Nguyên tắc giữ ổn định
 
-## Nguyên tắc cập nhật
+- Không đổi kiến trúc hiện tại: Google Apps Script Web App + Google Sheet + GitHub/clasp.
+- Không sửa logic đã pass nếu không liên quan trực tiếp đến chốt ngày.
+- Không đổi cấu trúc sheet cũ theo hướng phá dữ liệu.
+- Chỉ thêm sheet mới `DATA_CHOT_NGAY` khi QL dùng chức năng kiểm tra/chốt ngày lần đầu.
 
-- Không đổi schema dữ liệu.
-- Không đổi logic lưu phiếu mới.
-- Không đổi logic kiểm tra 8h/người/ngày.
-- Không đổi logic đăng ký thiết bị.
-- Không đổi logic thêm hạng mục mới.
-- Không đổi logic xóa mềm phiếu.
-- Không đổi logic sửa phiếu.
-- Không đổi logic báo cáo.
+## File cập nhật
 
-## File thay đổi
+Copy đè/thêm các file sau vào repo hiện tại:
 
 ```text
 src/Config.js
+src/Code.js
+src/SheetService.js
+src/WorkEntryService.js
+src/EntryManageService.js
+src/DailyConfirmService.js
 frontend/Index.html
 frontend/Style.html
 frontend/Script.html
 PATCH_NOTES.md
 ```
 
-## Nội dung cập nhật chính
+## Sheet mới tự tạo
 
-### 1. Chuẩn hóa bố cục mobile
+Khi QL bấm kiểm tra/chốt ngày, hệ thống tự tạo sheet:
 
-Tách màn hình chính thành 3 khu vực rõ ràng:
+```text
+DATA_CHOT_NGAY
+```
 
-1. Nhập công việc
-2. Quản lý phiếu đã nhập
-3. Báo cáo
+Header dòng 4:
 
-Mỗi khu vực có nút mở/thu gọn để giảm cuộn dài trên điện thoại.
+```text
+Ngay | TrangThai | XacNhanBoi | ThoiGianXacNhan | GhiChu | MoLaiBoi | ThoiGianMoLai | LyDoMoLai
+```
 
-### 2. Thông tin thiết bị/người dùng rõ hơn
+Trạng thái ngày:
 
-Khu vực đầu form hiển thị dạng thẻ:
+```text
+DRAFT      = Đang nhập
+CONFIRMED  = Đã xác nhận/chốt
+```
 
-- Người nhập
-- Thiết bị
-- Quyền
-- Trạng thái
-- Version
+## Chức năng thêm mới
 
-### 3. Nút thao tác dễ bấm hơn
+### 1. QL kiểm tra tổng giờ trong ngày
 
-Tăng kích thước vùng bấm cho các nút chính:
+Khu vực mới trên giao diện:
 
-- Lưu công việc
-- Tải danh sách phiếu
-- Sửa phiếu
-- Hủy phiếu
-- Tạo báo cáo
+```text
+✅ Kiểm tra / chốt ngày
+```
 
-### 4. Cảnh báo dễ đọc hơn
+Hiển thị:
 
-Các thông báo thành công/lỗi/cảnh báo có nền màu riêng để dễ nhìn trên điện thoại.
+```text
+- Phiếu ACTIVE trong ngày
+- Phiếu DELETED trong ngày
+- Số nhân viên đủ 8h
+- Số nhân viên chưa đủ 8h
+- Số nhân viên vượt 8h nếu có lỗi dữ liệu cũ
+- Chi tiết giờ theo từng nhân viên
+```
 
-### 5. Responsive nhỏ hơn 520px và 360px
+### 2. QL xác nhận/chốt ngày
 
-Bổ sung layout riêng cho điện thoại màn hình nhỏ, tránh vỡ form khi chọn nhân viên và số giờ.
+Khi QL xác nhận ngày:
+
+```text
+DATA_CHOT_NGAY.TrangThai = CONFIRMED
+```
+
+Ghi log:
+
+```text
+LOG_THAO_TAC.HanhDong = XAC_NHAN_NGAY
+```
+
+Nếu còn nhân viên vượt 8h, hệ thống không cho chốt ngày.
+
+### 3. Khóa thay đổi sau khi chốt
+
+Khi ngày đã `CONFIRMED`, hệ thống chặn:
+
+```text
+- Lưu phiếu mới trong ngày đó
+- Sửa phiếu trong ngày đó
+- Hủy mềm phiếu trong ngày đó
+```
+
+Muốn sửa dữ liệu, QL phải dùng nút:
+
+```text
+Mở lại ngày
+```
+
+và bắt buộc nhập lý do.
+
+### 4. QL mở lại ngày
+
+Khi mở lại ngày:
+
+```text
+DATA_CHOT_NGAY.TrangThai = DRAFT
+MoLaiBoi
+ThoiGianMoLai
+LyDoMoLai
+```
+
+Ghi log:
+
+```text
+LOG_THAO_TAC.HanhDong = MO_LAI_NGAY
+```
 
 ## Test bắt buộc
 
-### A. Kiểm tra quyền và hiển thị
-
-1. Mở bằng QL: `?deviceId=PC_TO_01`
-2. Thấy đủ 3 khu vực:
-   - Nhập công việc
-   - Quản lý phiếu đã nhập
-   - Báo cáo
-3. Mở bằng NV: `?deviceId=PC_TO_03`
-4. NV chỉ thấy khu vực nhập công việc, không thấy quản lý phiếu/báo cáo.
-
-### B. Kiểm tra mở/thu gọn
-
-1. Bấm mở/thu gọn từng khu vực.
-2. Không mất dữ liệu đang nhập trong khu vực.
-3. Không lệch layout trên điện thoại.
-
-### C. Kiểm tra nghiệp vụ đã pass
-
-1. Lưu phiếu mới nhiều nhân viên.
-2. Kiểm tra giới hạn 8h/người/ngày.
-3. Tải danh sách phiếu.
-4. Hủy mềm phiếu.
-5. Sửa phiếu.
-6. Tạo báo cáo.
-7. Phiếu DELETED vẫn không được tính trong báo cáo.
+1. QL mở form, thấy khu vực `✅ Kiểm tra / chốt ngày`.
+2. NV mở form, không thấy khu vực chốt ngày.
+3. QL chọn ngày có dữ liệu, bấm `Kiểm tra tổng giờ trong ngày`.
+4. Hệ thống tự tạo sheet `DATA_CHOT_NGAY` nếu chưa có.
+5. Bảng tổng giờ hiển thị đủ trạng thái: chưa đủ / đủ 8h / vượt 8h.
+6. QL bấm `Xác nhận/chốt ngày`.
+7. Kiểm tra `DATA_CHOT_NGAY`: ngày chuyển `CONFIRMED`.
+8. Kiểm tra `LOG_THAO_TAC`: có `XAC_NHAN_NGAY`.
+9. Sau khi chốt ngày, thử lưu phiếu mới cùng ngày → phải bị chặn.
+10. Sau khi chốt ngày, thử sửa phiếu cùng ngày → phải bị chặn.
+11. Sau khi chốt ngày, thử hủy phiếu cùng ngày → phải bị chặn.
+12. QL nhập lý do và bấm `Mở lại ngày`.
+13. Kiểm tra `DATA_CHOT_NGAY`: ngày chuyển `DRAFT`, có `LyDoMoLai`.
+14. Sau khi mở lại, lưu/sửa/hủy phiếu hoạt động lại bình thường.
+15. Các chức năng đã pass V0.6 vẫn hoạt động:
+    - Lưu nhiều nhân viên
+    - Đăng ký thiết bị
+    - Báo cáo
+    - Quản lý phiếu
+    - Xóa mềm
+    - Sửa phiếu
+    - UI mobile mở/thu gọn
 
 ## Chốt pass
 
-Nếu tất cả test đạt, chốt:
+Nếu test pass, chốt:
 
 ```text
-V0.6_UI_MOBILE_CLEANUP_TEST_PASS
+V0.7_DAILY_LOCK_AND_CONFIRM_FLOW_TEST_PASS
 ```
