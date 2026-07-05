@@ -2,13 +2,13 @@
 <html>
   <head>
     <base target="_top">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
     <?!= include('frontend/Style'); ?>
   </head>
   <body>
     <div class="app">
       <header class="header">
-        <div>
+        <div class="brand-block">
           <h1>VNPS WORK ASSIGN</h1>
           <p id="status">Đang kiểm tra thiết bị...</p>
         </div>
@@ -37,7 +37,7 @@
         <textarea id="regGhiChu" rows="2" placeholder="Không bắt buộc"></textarea>
 
         <button class="save" type="button" onclick="submitDeviceRegister()">Gửi đăng ký thiết bị</button>
-        <p id="registerMessage"></p>
+        <p id="registerMessage" class="message-line"></p>
       </main>
 
       <main id="pendingArea" class="card pending hidden">
@@ -46,93 +46,120 @@
         <p>Hãy báo quản lý đổi trạng thái thiết bị trong <b>DM_THIET_BI</b> từ <b>Chờ duyệt</b> sang <b>Hoạt động</b>, sau đó tải lại form.</p>
       </main>
 
-      <main id="formArea" class="card hidden">
-        <div class="userbar">
-          <span id="userInfo"></span>
-        </div>
-
-        <label>Ngày</label>
-        <input id="ngay" type="date">
-
-        <label>Hạng mục công việc</label>
-        <select id="maCongViec"></select>
-
-        <div id="newJobBox" class="hidden">
-          <label>Nhập hạng mục mới</label>
-          <input id="hangMucMoi" type="text" placeholder="Nhập hạng mục phát sinh">
-        </div>
-
-        <label>Nội dung công việc</label>
-        <textarea id="noiDungCongViec" rows="3" placeholder="Ghi nội dung chung cho hạng mục"></textarea>
-
-        <div class="row-title">
-          <h3>Nhân viên tham gia</h3>
-          <button type="button" onclick="addEmployeeRow()">+ Thêm nhân viên</button>
-        </div>
-        <div id="employeeRows"></div>
-
-        <button class="save" type="button" onclick="saveForm()">Lưu công việc</button>
-        <p id="message"></p>
-
-        <section id="reportBox" class="report-box hidden">
-          <div class="row-title">
-            <h3>Báo cáo</h3>
+      <main id="formArea" class="hidden">
+        <section class="card identity-card">
+          <div class="userbar">
+            <span id="userInfo"></span>
           </div>
-          <p class="hint">Chỉ QL được tạo báo cáo. Báo cáo sẽ ghi vào 2 sheet: <b>REPORT_NHAN_VIEN_NGAY</b> và <b>REPORT_HANG_MUC_NGAY</b>.</p>
-
-          <label>Từ ngày</label>
-          <input id="reportFromDate" type="date">
-
-          <label>Đến ngày</label>
-          <input id="reportToDate" type="date">
-
-          <button class="report" type="button" onclick="generateReports()">Tạo báo cáo</button>
-          <p id="reportMessage"></p>
         </section>
 
-        <section id="manageBox" class="manage-box hidden">
-          <div class="row-title">
-            <h3>Quản lý phiếu đã nhập</h3>
-          </div>
-          <p class="hint">Chỉ QL được xem và hủy phiếu nhập sai. Hủy phiếu là <b>xóa mềm</b>: dữ liệu vẫn còn trên sheet nhưng báo cáo và tính giờ sẽ bỏ qua phiếu đã hủy.</p>
+        <section id="workSection" class="section-card open">
+          <button class="section-toggle" type="button" onclick="toggleSection('workSection')">
+            <span>
+              <span class="section-title">📝 Nhập công việc</span>
+              <span class="section-subtitle">Lưu phiếu mới theo ngày, hạng mục và nhân viên</span>
+            </span>
+            <span class="section-state">Thu gọn</span>
+          </button>
 
-          <label>Ngày cần xem phiếu</label>
-          <input id="manageDate" type="date">
+          <div class="section-body">
+            <label>Ngày</label>
+            <input id="ngay" type="date">
 
-          <button class="manage" type="button" onclick="loadWorkEntries()">Tải danh sách phiếu</button>
-          <p id="manageMessage"></p>
-          <div id="entryList" class="entry-list"></div>
+            <label>Hạng mục công việc</label>
+            <select id="maCongViec"></select>
 
-          <div id="entryEditBox" class="entry-edit hidden">
-            <h3>Sửa phiếu</h3>
-            <p class="hint">Chỉ sửa nội dung công việc, nhân viên và số giờ. Không sửa ngày/hạng mục trong V0.5.</p>
-
-            <label>Mã phiếu</label>
-            <input id="editPhieuId" type="text" readonly>
-
-            <label>Hạng mục</label>
-            <input id="editHangMuc" type="text" readonly>
+            <div id="newJobBox" class="hidden">
+              <label>Nhập hạng mục mới</label>
+              <input id="hangMucMoi" type="text" placeholder="Nhập hạng mục phát sinh">
+            </div>
 
             <label>Nội dung công việc</label>
-            <textarea id="editNoiDungCongViec" rows="3"></textarea>
+            <textarea id="noiDungCongViec" rows="3" placeholder="Ghi nội dung chung cho hạng mục"></textarea>
 
             <div class="row-title">
-              <h3>Nhân viên trong phiếu</h3>
-              <button type="button" onclick="addEditEmployeeRow()">+ Thêm dòng</button>
+              <h3>Nhân viên tham gia</h3>
+              <button class="small-action" type="button" onclick="addEmployeeRow()">+ Thêm</button>
             </div>
-            <div id="editEmployeeRows"></div>
+            <div id="employeeRows"></div>
 
-            <label>Lý do sửa</label>
-            <textarea id="editReason" rows="2" placeholder="Bắt buộc nhập lý do sửa"></textarea>
-
-            <div class="edit-actions">
-              <button class="save" type="button" onclick="saveEntryEdit()">Lưu sửa phiếu</button>
-              <button class="secondary" type="button" onclick="cancelEntryEdit()">Hủy sửa</button>
-            </div>
-            <p id="editMessage"></p>
+            <button class="save" type="button" onclick="saveForm()">Lưu công việc</button>
+            <p id="message" class="message-line"></p>
           </div>
         </section>
 
+        <section id="manageBox" class="section-card manage-box hidden collapsed">
+          <button class="section-toggle" type="button" onclick="toggleSection('manageBox')">
+            <span>
+              <span class="section-title">🗂️ Quản lý phiếu đã nhập</span>
+              <span class="section-subtitle">QL xem, sửa hoặc hủy mềm phiếu nhập sai</span>
+            </span>
+            <span class="section-state">Mở</span>
+          </button>
+
+          <div class="section-body">
+            <p class="hint">Hủy phiếu là <b>xóa mềm</b>: dữ liệu vẫn còn trên sheet nhưng báo cáo và tính giờ sẽ bỏ qua phiếu đã hủy.</p>
+
+            <label>Ngày cần xem phiếu</label>
+            <input id="manageDate" type="date">
+
+            <button class="manage" type="button" onclick="loadWorkEntries()">Tải danh sách phiếu</button>
+            <p id="manageMessage" class="message-line"></p>
+            <div id="entryList" class="entry-list"></div>
+
+            <div id="entryEditBox" class="entry-edit hidden">
+              <h3>Sửa phiếu</h3>
+              <p class="hint">Chỉ sửa nội dung công việc, nhân viên và số giờ. Không sửa ngày/hạng mục trong V0.6.</p>
+
+              <label>Mã phiếu</label>
+              <input id="editPhieuId" type="text" readonly>
+
+              <label>Hạng mục</label>
+              <input id="editHangMuc" type="text" readonly>
+
+              <label>Nội dung công việc</label>
+              <textarea id="editNoiDungCongViec" rows="3"></textarea>
+
+              <div class="row-title">
+                <h3>Nhân viên trong phiếu</h3>
+                <button class="small-action" type="button" onclick="addEditEmployeeRow()">+ Thêm</button>
+              </div>
+              <div id="editEmployeeRows"></div>
+
+              <label>Lý do sửa</label>
+              <textarea id="editReason" rows="2" placeholder="Bắt buộc nhập lý do sửa"></textarea>
+
+              <div class="edit-actions">
+                <button class="save" type="button" onclick="saveEntryEdit()">Lưu sửa phiếu</button>
+                <button class="secondary" type="button" onclick="cancelEntryEdit()">Hủy sửa</button>
+              </div>
+              <p id="editMessage" class="message-line"></p>
+            </div>
+          </div>
+        </section>
+
+        <section id="reportBox" class="section-card report-box hidden collapsed">
+          <button class="section-toggle" type="button" onclick="toggleSection('reportBox')">
+            <span>
+              <span class="section-title">📊 Báo cáo</span>
+              <span class="section-subtitle">QL tạo báo cáo nhân viên và hạng mục theo ngày</span>
+            </span>
+            <span class="section-state">Mở</span>
+          </button>
+
+          <div class="section-body">
+            <p class="hint">Báo cáo sẽ ghi vào 2 sheet: <b>REPORT_NHAN_VIEN_NGAY</b> và <b>REPORT_HANG_MUC_NGAY</b>.</p>
+
+            <label>Từ ngày</label>
+            <input id="reportFromDate" type="date">
+
+            <label>Đến ngày</label>
+            <input id="reportToDate" type="date">
+
+            <button class="report" type="button" onclick="generateReports()">Tạo báo cáo</button>
+            <p id="reportMessage" class="message-line"></p>
+          </div>
+        </section>
       </main>
     </div>
 

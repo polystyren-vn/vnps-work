@@ -2,6 +2,7 @@
   const state = {
     deviceId: window.__DEVICE_ID__ || '',
     context: null,
+    version: '',
     jobs: [],
     employees: [],
     entries: [],
@@ -54,6 +55,26 @@
     });
   }
 
+  function setSectionCollapsed(sectionId, collapsed) {
+    const section = document.getElementById(sectionId);
+    if (!section) return;
+    section.classList.toggle('collapsed', !!collapsed);
+    const stateLabel = section.querySelector('.section-state');
+    if (stateLabel) stateLabel.textContent = collapsed ? 'Mở' : 'Thu gọn';
+  }
+
+  function toggleSection(sectionId) {
+    const section = document.getElementById(sectionId);
+    if (!section) return;
+    setSectionCollapsed(sectionId, !section.classList.contains('collapsed'));
+  }
+
+  function resetMobileSections() {
+    setSectionCollapsed('workSection', false);
+    setSectionCollapsed('manageBox', true);
+    setSectionCollapsed('reportBox', true);
+  }
+
   function init() {
     document.getElementById('ngay').value = todayText();
 
@@ -69,6 +90,7 @@
           return;
         }
         state.context = res.context;
+        state.version = res.version || '';
         state.jobs = res.jobs || [];
         state.employees = res.employees || [];
         renderForm();
@@ -148,8 +170,16 @@
     hideAllAreas();
     document.getElementById('status').textContent = 'Thiết bị hợp lệ';
     document.getElementById('formArea').classList.remove('hidden');
-    document.getElementById('userInfo').textContent =
-      `Thiết bị: ${state.context.deviceId} · Người nhập: ${state.context.soThe} - ${state.context.hoTen} · Quyền: ${state.context.viTri}`;
+    resetMobileSections();
+    document.getElementById('userInfo').innerHTML = `
+      <div class="identity-title">${escapeHtml(state.context.soThe)} - ${escapeHtml(state.context.hoTen)}</div>
+      <div class="identity-grid">
+        <span class="identity-chip"><span class="chip-label">Thiết bị</span><span class="chip-value">${escapeHtml(state.context.deviceId)}</span></span>
+        <span class="identity-chip"><span class="chip-label">Quyền</span><span class="chip-value">${escapeHtml(state.context.viTri)}</span></span>
+        <span class="identity-chip"><span class="chip-label">Trạng thái</span><span class="chip-value">Hoạt động</span></span>
+        <span class="identity-chip"><span class="chip-label">Version</span><span class="chip-value">${escapeHtml(state.version || '')}</span></span>
+      </div>
+    `;
 
     const reportBox = document.getElementById('reportBox');
     if (reportBox) {
@@ -307,6 +337,7 @@
       return;
     }
 
+    setSectionCollapsed('reportBox', false);
     setReportMessage('Đang tạo báo cáo...', true);
 
     google.script.run
@@ -340,6 +371,7 @@
       return;
     }
 
+    setSectionCollapsed('manageBox', false);
     setManageMessage('Đang tải danh sách phiếu...', true);
     const manageLoadTimer = setTimeout(() => {
       setManageMessage('Tải danh sách phiếu quá lâu. Kiểm tra Apps Script > Executions hoặc thử tải lại.', false);
@@ -485,6 +517,7 @@
   function renderEntryEditForm(entry) {
     const box = document.getElementById('entryEditBox');
     if (!box) return;
+    setSectionCollapsed('manageBox', false);
     box.classList.remove('hidden');
     document.getElementById('editPhieuId').value = entry.phieuId || '';
     document.getElementById('editHangMuc').value = entry.hangMuc || '';

@@ -1,10 +1,10 @@
 /**
  * VNPS Work Assign - Config
- * Version: V0.5_EDIT_ENTRY_DETAIL
+ * Version: V0.6_UI_MOBILE_CLEANUP
  */
 const APP = {
   NAME: 'VNPS_WORK_ASSIGN_APP',
-  VERSION: 'V0.5_EDIT_ENTRY_DETAIL',
+  VERSION: 'V0.6_UI_MOBILE_CLEANUP',
   TIMEZONE: 'Asia/Ho_Chi_Minh',
   MAX_HOURS_PER_DAY: 8,
   ADD_NEW_JOB_VALUE: '__ADD_NEW_JOB__',
