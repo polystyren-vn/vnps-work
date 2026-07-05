@@ -1,9 +1,12 @@
 function getUsedHoursByDate_(ngay) {
   const key = dateKey_(ngay);
+  const activeMap = makeActiveWorkEntryMap_();
   const rows = readObjects_(SHEETS.DATA_NHAN_SU_CONG_VIEC);
   const used = {};
   rows.forEach(r => {
     if (dateKey_(r.Ngay) !== key) return;
+    const phieuId = String(r.PhieuID || '').trim();
+    if (!activeMap[phieuId]) return;
     const soThe = String(r.SoThe || '').trim();
     const gio = Number(r.SoGio || 0);
     used[soThe] = (used[soThe] || 0) + gio;
@@ -23,6 +26,7 @@ function getAvailableEmployees(ngay) {
 }
 
 function getNextPhieuId_(ngay, maCongViec) {
+  ensureWorkEntryStatusSchema_();
   const datePart = dateKey_(ngay).replace(/-/g, '');
   const prefix = datePart + '_' + maCongViec + '_';
   const rows = readObjects_(SHEETS.DATA_CONG_VIEC);
@@ -132,6 +136,7 @@ function saveWorkEntry(payload) {
     const ngayKey = dateKey_(payload.ngay);
     const now = nowText_();
 
+    ensureWorkEntryStatusSchema_();
     appendObject_(SHEETS.DATA_CONG_VIEC, {
       PhieuID: phieuId,
       Ngay: ngayKey,
@@ -140,7 +145,11 @@ function saveWorkEntry(payload) {
       NoiDungCongViec: payload.noiDungCongViec || '',
       NguoiNhap: context.soThe,
       DeviceID: context.deviceId,
-      ThoiGianLuu: now
+      ThoiGianLuu: now,
+      TrangThai: APP.ENTRY_STATUS_ACTIVE,
+      HuyBoi: '',
+      ThoiGianHuy: '',
+      LyDoHuy: ''
     });
 
     const detailRows = payload.nhanSu.map(item => ({

@@ -102,12 +102,12 @@
     font-size: 20px;
     padding: 15px;
   }
-  .report-box {
+  .report-box, .manage-box {
     margin-top: 20px;
     padding-top: 14px;
     border-top: 2px solid var(--line);
   }
-  .report {
+  .report, .manage {
     width: 100%;
     margin-top: 18px;
     font-size: 19px;
@@ -125,7 +125,44 @@
     background: #ef4444;
     padding: 12px 0;
   }
-  #message, #registerMessage, #reportMessage { font-weight: bold; }
+
+  .entry-list {
+    margin-top: 12px;
+  }
+  .entry-card {
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    padding: 12px;
+    margin-top: 10px;
+    background: #fff;
+  }
+  .entry-card.deleted {
+    background: #f8fafc;
+    opacity: .72;
+  }
+  .entry-head {
+    display: flex;
+    justify-content: space-between;
+    gap: 8px;
+    font-weight: bold;
+  }
+  .entry-meta {
+    margin-top: 6px;
+    color: #475569;
+    font-size: 15px;
+    line-height: 1.45;
+  }
+  .entry-actions {
+    margin-top: 10px;
+    display: flex;
+    gap: 8px;
+  }
+  .delete-entry {
+    background: #dc2626;
+    width: 100%;
+  }
+
+  #message, #registerMessage, #reportMessage, #manageMessage { font-weight: bold; }
   .error { color: var(--danger); }
   .ok { color: var(--primary); }
   .warn { color: var(--warning); }

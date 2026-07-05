@@ -1,12 +1,13 @@
 /**
  * VNPS Work Assign - ReportService
- * Version: V0.3_REPORT_BASIC
+ * Version: V0.4_EDIT_DELETE_ENTRY
  *
  * Phạm vi V0.3:
  * - Dựng REPORT_NHAN_VIEN_NGAY.
  * - Dựng REPORT_HANG_MUC_NGAY.
  * - Chỉ QL được tạo báo cáo.
- * - Không đổi logic DATA gốc, không đổi logic lưu công việc/đăng ký thiết bị.
+ * - Báo cáo bỏ qua phiếu TrangThai = DELETED.
+ * - Không đổi logic đăng ký thiết bị.
  */
 
 function parseDateKey_(value) {
@@ -61,9 +62,10 @@ function makeJobMap_() {
 
 function makeWorkHeaderMap_() {
   const phieuMap = {};
+  ensureWorkEntryStatusSchema_();
   readObjects_(SHEETS.DATA_CONG_VIEC).forEach(r => {
     const id = String(r.PhieuID || '').trim();
-    if (id) phieuMap[id] = r;
+    if (id && isActiveWorkEntry_(r)) phieuMap[id] = r;
   });
   return phieuMap;
 }
@@ -100,8 +102,10 @@ function clearAndWriteReport_(sheetName, values) {
 function getWorkDetailRowsInRange_(dateKeys) {
   const dateSet = {};
   dateKeys.forEach(d => dateSet[d] = true);
+  const activePhieuMap = makeWorkHeaderMap_();
   return readObjects_(SHEETS.DATA_NHAN_SU_CONG_VIEC)
-    .filter(r => dateSet[dateKey_(r.Ngay)]);
+    .filter(r => dateSet[dateKey_(r.Ngay)])
+    .filter(r => !!activePhieuMap[String(r.PhieuID || '').trim()]);
 }
 
 function buildEmployeeReportValues_(fromDate, toDate) {

@@ -1,124 +1,24 @@
-# V0.3_REPORT_BASIC
+# V0.4.1_ENTRY_LIST_LOAD_FIX
 
-## Baseline đầu vào
+## Mục tiêu
+Sửa lỗi khu vực **Quản lý phiếu đã nhập** bị kẹt ở trạng thái `Đang tải danh sách phiếu...`.
 
-- `V0.2_DEVICE_REGISTER_FLOW_TEST_PASS`
-- Giữ nguyên logic đã pass:
-  - đăng ký thiết bị;
-  - thiết bị chờ duyệt/khóa/hoạt động;
-  - phân quyền QL/NV;
-  - lưu 1 phiếu với nhiều nhân viên;
-  - kiểm tra 8h/người/ngày.
+## Nguyên nhân khả năng cao
+`apiListWorkEntries()` trả dữ liệu có giá trị ngày/giờ dạng Date từ Google Sheet (`ThoiGianLuu`). `google.script.run` dễ lỗi khi trả object chứa Date về HTML client.
 
-## Mục tiêu V0.3
+## Nội dung sửa
+- `EntryManageService.js`: chuyển toàn bộ giá trị trả về client sang text an toàn, đặc biệt `ThoiGianLuu`.
+- `Config.js`: nâng version lên `V0.4.1_ENTRY_LIST_LOAD_FIX`.
+- `frontend/Script.html`: thêm timeout 20 giây để không kẹt im lặng nếu server không phản hồi.
 
-Thêm chức năng tạo báo cáo cơ bản từ dữ liệu gốc.
+## Phạm vi giữ nguyên
+- Không đổi logic lưu phiếu.
+- Không đổi logic đăng ký thiết bị.
+- Không đổi báo cáo V0.3.
+- Không đổi cấu trúc DATA.
 
-## File cập nhật
-
-Copy đè các file sau vào repo hiện tại:
-
-```text
-src/Config.js
-src/Code.js
-src/ReportService.js
-frontend/Index.html
-frontend/Style.html
-frontend/Script.html
-```
-
-## Chức năng mới
-
-### 1. Báo cáo theo nhân viên/ngày
-
-Ghi vào sheet:
-
-```text
-REPORT_NHAN_VIEN_NGAY
-```
-
-Cấu trúc:
-
-```text
-Ngay | SoThe | HoTen | TongGio | ChiTietCongViec | TrangThaiGio
-```
-
-`TrangThaiGio`:
-
-```text
-Đủ 8h
-Chưa đủ
-Vượt 8h
-```
-
-### 2. Báo cáo ngang theo hạng mục/ngày
-
-Ghi vào sheet:
-
-```text
-REPORT_HANG_MUC_NGAY
-```
-
-Cấu trúc:
-
-```text
-STT | HangMuc | yyyy-mm-dd | yyyy-mm-dd | ...
-```
-
-Mỗi ô ngày hiển thị dạng:
-
-```text
-1002-4h, 1004-2h
-```
-
-Dòng cuối là:
-
-```text
-Tổng số nhân viên
-```
-
-Tổng số nhân viên đếm số thẻ không trùng trong từng ngày.
-
-## Quyền tạo báo cáo
-
-Chỉ thiết bị đang đăng nhập với người phụ trách có `ViTri = QL` mới hiện và được gọi API tạo báo cáo.
-
-Backend vẫn chặn nếu không phải QL, không chỉ ẩn trên giao diện.
-
-## Cách cập nhật
-
-```bash
-clasp push
-```
-
-Sau đó deploy Web App phiên bản mới:
-
-```text
-Deploy → Manage deployments → Edit deployment → New version
-Description: V0.3_REPORT_BASIC
-```
-
-## Test bắt buộc
-
-1. Mở `?deviceId=PC_TO_01`:
-   - vào form bình thường;
-   - có khu vực Báo cáo.
-2. Mở `?deviceId=PC_TO_03`:
-   - vào form bình thường;
-   - không có khu vực Báo cáo.
-3. Dùng QL tạo báo cáo:
-   - `REPORT_NHAN_VIEN_NGAY` được dựng lại;
-   - `REPORT_HANG_MUC_NGAY` được dựng lại;
-   - `LOG_THAO_TAC` có `TAO_BAO_CAO`.
-4. Test lại lưu công việc nhiều nhân viên:
-   - vẫn ghi đúng nhiều dòng nhân sự.
-5. Test lại đăng ký thiết bị mới:
-   - vẫn ghi `DM_THIET_BI` trạng thái `Chờ duyệt`.
-
-## Chốt pass
-
-Nếu các case trên đúng, chốt:
-
-```text
-V0.3_REPORT_BASIC_TEST_PASS
-```
+## Test
+1. Mở bằng QL `?deviceId=PC_TO_01`.
+2. Chọn ngày có phiếu.
+3. Bấm `Tải danh sách phiếu`.
+4. Danh sách phải hiện ra hoặc báo lỗi rõ ràng, không kẹt mãi.

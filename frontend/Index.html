@@ -89,6 +89,21 @@
           <button class="report" type="button" onclick="generateReports()">Tạo báo cáo</button>
           <p id="reportMessage"></p>
         </section>
+
+        <section id="manageBox" class="manage-box hidden">
+          <div class="row-title">
+            <h3>Quản lý phiếu đã nhập</h3>
+          </div>
+          <p class="hint">Chỉ QL được xem và hủy phiếu nhập sai. Hủy phiếu là <b>xóa mềm</b>: dữ liệu vẫn còn trên sheet nhưng báo cáo và tính giờ sẽ bỏ qua phiếu đã hủy.</p>
+
+          <label>Ngày cần xem phiếu</label>
+          <input id="manageDate" type="date">
+
+          <button class="manage" type="button" onclick="loadWorkEntries()">Tải danh sách phiếu</button>
+          <p id="manageMessage"></p>
+          <div id="entryList" class="entry-list"></div>
+        </section>
+
       </main>
     </div>
 

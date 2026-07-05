@@ -3,7 +3,8 @@
     deviceId: window.__DEVICE_ID__ || '',
     context: null,
     jobs: [],
-    employees: []
+    employees: [],
+    entries: []
   };
 
   function todayText() {
@@ -25,6 +26,13 @@
 
   function setReportMessage(text, ok) {
     const el = document.getElementById('reportMessage');
+    if (!el) return;
+    el.textContent = text || '';
+    el.className = ok ? 'ok' : 'error';
+  }
+
+  function setManageMessage(text, ok) {
+    const el = document.getElementById('manageMessage');
     if (!el) return;
     el.textContent = text || '';
     el.className = ok ? 'ok' : 'error';
@@ -139,6 +147,12 @@
       reportBox.classList.toggle('hidden', !state.context.isQL);
       document.getElementById('reportFromDate').value = document.getElementById('ngay').value || todayText();
       document.getElementById('reportToDate').value = document.getElementById('ngay').value || todayText();
+    }
+
+    const manageBox = document.getElementById('manageBox');
+    if (manageBox) {
+      manageBox.classList.toggle('hidden', !state.context.isQL);
+      document.getElementById('manageDate').value = document.getElementById('ngay').value || todayText();
     }
 
     const jobSelect = document.getElementById('maCongViec');
@@ -300,6 +314,117 @@
       .withFailureHandler(err => setReportMessage(err.message, false))
       .apiGenerateReports(payload);
   }
+
+
+  function loadWorkEntries() {
+    if (!state.context || !state.context.isQL) {
+      setManageMessage('Chỉ QL được quản lý phiếu.', false);
+      return;
+    }
+
+    const payload = {
+      deviceId: state.deviceId,
+      ngay: document.getElementById('manageDate').value
+    };
+    if (!payload.ngay) {
+      setManageMessage('Vui lòng chọn ngày cần xem phiếu.', false);
+      return;
+    }
+
+    setManageMessage('Đang tải danh sách phiếu...', true);
+    const manageLoadTimer = setTimeout(() => {
+      setManageMessage('Tải danh sách phiếu quá lâu. Kiểm tra Apps Script > Executions hoặc thử tải lại.', false);
+    }, 20000);
+    google.script.run
+      .withSuccessHandler(res => {
+        clearTimeout(manageLoadTimer);
+        if (!res.ok) {
+          setManageMessage(res.reason || 'Không tải được danh sách phiếu.', false);
+          return;
+        }
+        state.entries = res.entries || [];
+        renderEntryList();
+        setManageMessage(`Đã tải ${state.entries.length} phiếu ngày ${res.ngay}.`, true);
+      })
+      .withFailureHandler(err => {
+        clearTimeout(manageLoadTimer);
+        setManageMessage(err.message, false);
+      })
+      .apiListWorkEntries(payload);
+  }
+
+  function escapeHtml(text) {
+    return String(text || '')
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#039;');
+  }
+
+  function renderEntryList() {
+    const box = document.getElementById('entryList');
+    if (!box) return;
+    if (!state.entries.length) {
+      box.innerHTML = '<p class="hint">Không có phiếu trong ngày đã chọn.</p>';
+      return;
+    }
+
+    box.innerHTML = state.entries.map(e => {
+      const deleted = e.trangThai === 'DELETED';
+      const statusText = deleted ? 'ĐÃ HỦY' : 'ACTIVE';
+      const actionHtml = deleted
+        ? `<div class="entry-meta">Lý do hủy: ${escapeHtml(e.lyDoHuy || '')}</div>`
+        : `<div class="entry-actions"><button class="delete-entry" type="button" onclick="deleteEntry('${escapeHtml(e.phieuId)}')">Hủy phiếu</button></div>`;
+      return `
+        <div class="entry-card ${deleted ? 'deleted' : ''}">
+          <div class="entry-head">
+            <span>${escapeHtml(e.phieuId)}</span>
+            <span>${statusText}</span>
+          </div>
+          <div class="entry-meta">
+            <b>${escapeHtml(e.hangMuc)}</b><br>
+            Nội dung: ${escapeHtml(e.noiDungCongViec)}<br>
+            Nhân sự: ${escapeHtml(e.nhanSuText || '')}<br>
+            Tổng: ${e.soNhanSu || 0} người · ${e.tongGio || 0}h<br>
+            Người nhập: ${escapeHtml(e.nguoiNhap)} · Thiết bị: ${escapeHtml(e.deviceId)}
+          </div>
+          ${actionHtml}
+        </div>
+      `;
+    }).join('');
+  }
+
+  function deleteEntry(phieuId) {
+    const reason = prompt('Nhập lý do hủy phiếu ' + phieuId + ':');
+    if (reason === null) return;
+    if (!reason.trim()) {
+      setManageMessage('Lý do hủy phiếu không được trống.', false);
+      return;
+    }
+    if (!confirm('Xác nhận hủy phiếu ' + phieuId + '? Dữ liệu sẽ không bị xóa vật lý, nhưng báo cáo và tính giờ sẽ bỏ qua phiếu này.')) {
+      return;
+    }
+
+    setManageMessage('Đang hủy phiếu...', true);
+    google.script.run
+      .withSuccessHandler(res => {
+        if (!res.ok) {
+          setManageMessage(res.reason || 'Không hủy được phiếu.', false);
+          return;
+        }
+        setManageMessage('Đã hủy phiếu: ' + res.phieuId, true);
+        reloadEmployees();
+        loadWorkEntries();
+      })
+      .withFailureHandler(err => setManageMessage(err.message, false))
+      .apiSoftDeleteWorkEntry({
+        deviceId: state.deviceId,
+        phieuId,
+        reason
+      });
+  }
+
 
   window.addEventListener('load', init);
 </script>

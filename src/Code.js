@@ -63,3 +63,11 @@ function apiSaveWorkEntry(payload) {
 function apiGenerateReports(payload) {
   return generateBasicReports(payload);
 }
+
+function apiListWorkEntries(payload) {
+  return listWorkEntriesForManage(payload);
+}
+
+function apiSoftDeleteWorkEntry(payload) {
+  return softDeleteWorkEntry(payload);
+}

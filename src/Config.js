@@ -1,16 +1,18 @@
 /**
  * VNPS Work Assign - Config
- * Version: V0.3_REPORT_BASIC
+ * Version: V0.4.1_ENTRY_LIST_LOAD_FIX
  */
 const APP = {
   NAME: 'VNPS_WORK_ASSIGN_APP',
-  VERSION: 'V0.3_REPORT_BASIC',
+  VERSION: 'V0.4.1_ENTRY_LIST_LOAD_FIX',
   TIMEZONE: 'Asia/Ho_Chi_Minh',
   MAX_HOURS_PER_DAY: 8,
   ADD_NEW_JOB_VALUE: '__ADD_NEW_JOB__',
   DEVICE_STATUS_ACTIVE: 'Hoạt động',
   DEVICE_STATUS_PENDING: 'Chờ duyệt',
-  DEVICE_STATUS_LOCKED: 'Khóa'
+  DEVICE_STATUS_LOCKED: 'Khóa',
+  ENTRY_STATUS_ACTIVE: 'ACTIVE',
+  ENTRY_STATUS_DELETED: 'DELETED'
 };
 
 const SHEETS = {
@@ -28,7 +30,7 @@ const HEADERS = {
   DM_CONG_VIEC: ['MaCongViec','HangMuc','Nhom','TrangThai','NguonTao','NguoiTao','NgayTao','GhiChu'],
   DM_NHAN_VIEN: ['SoThe','HoTen','ViTri','TrangThai','GhiChu'],
   DM_THIET_BI: ['DeviceID','TenThietBi','SoTheDangKy','TrangThai','NgayDangKy','GhiChu'],
-  DATA_CONG_VIEC: ['PhieuID','Ngay','MaCongViec','HangMuc','NoiDungCongViec','NguoiNhap','DeviceID','ThoiGianLuu'],
+  DATA_CONG_VIEC: ['PhieuID','Ngay','MaCongViec','HangMuc','NoiDungCongViec','NguoiNhap','DeviceID','ThoiGianLuu','TrangThai','HuyBoi','ThoiGianHuy','LyDoHuy'],
   DATA_NHAN_SU_CONG_VIEC: ['ID','PhieuID','Ngay','MaCongViec','SoThe','SoGio'],
   LOG_THAO_TAC: ['LogID','ThoiGian','DeviceID','SoThe','HanhDong','NoiDung'],
   REPORT_NHAN_VIEN_NGAY: ['Ngay','SoThe','HoTen','TongGio','ChiTietCongViec','TrangThaiGio'],

@@ -76,3 +76,39 @@ function dateKey_(value) {
   }
   return String(value || '').trim().slice(0, 10);
 }
+
+
+/**
+ * V0.4: bổ sung cột mới an toàn cho sheet hiện hữu.
+ * Không xóa/sắp xếp lại cột cũ; chỉ append header còn thiếu ở cuối dòng 4.
+ */
+function ensureSheetColumns_(sheetName, requiredHeaders) {
+  const sh = getSheet_(sheetName);
+  const headerRow = 4;
+  let lastCol = Math.max(sh.getLastColumn(), 1);
+  let headers = sh.getRange(headerRow, 1, 1, lastCol).getValues()[0].map(String);
+  const exists = {};
+  headers.forEach(h => { if (h) exists[h] = true; });
+
+  const missing = (requiredHeaders || []).filter(h => h && !exists[h]);
+  if (missing.length) {
+    sh.getRange(headerRow, lastCol + 1, 1, missing.length).setValues([missing]);
+    sh.getRange(headerRow, lastCol + 1, 1, missing.length)
+      .setFontWeight('bold')
+      .setBackground('#0F766E')
+      .setFontColor('#FFFFFF');
+    SpreadsheetApp.flush();
+  }
+  return getHeaderMap_(sheetName);
+}
+
+function updateObjectByRowNumber_(sheetName, rowNumber, patch) {
+  if (!rowNumber || rowNumber < 1) throw new Error('rowNumber không hợp lệ.');
+  const sh = getSheet_(sheetName);
+  const meta = getHeaderMap_(sheetName);
+  Object.keys(patch || {}).forEach(key => {
+    if (meta.map[key] === undefined) return;
+    sh.getRange(rowNumber, meta.map[key] + 1).setValue(patch[key]);
+  });
+  SpreadsheetApp.flush();
+}
