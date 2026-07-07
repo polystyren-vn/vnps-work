@@ -1,157 +1,101 @@
-# VNPS WORK ASSIGN - V0.7_DAILY_LOCK_AND_CONFIRM_FLOW
+# V0.10_EMPLOYEE_LEAVE_FILTER
 
-Baseline đầu vào: `V0.6_UI_MOBILE_CLEANUP_TEST_PASS`.
+Baseline đầu vào: `V0.9_DEVICE_BROWSER_TOKEN_REGISTER_TEST_PASS`.
 
 ## Mục tiêu
 
-Thêm lớp kiểm tra/chốt dữ liệu theo ngày cho QL, phục vụ kiểm soát dữ liệu trước khi dùng báo cáo chính thức.
+Bổ sung quản lý nhân viên nghỉ và chuẩn hóa danh sách nhân viên được phân công công việc:
 
-## Nguyên tắc giữ ổn định
+1. Nhân viên có quyền `QL` không còn xuất hiện trong dropdown nhân viên khi nhập/sửa công việc.
+2. QL nhập nhân viên nghỉ theo ngày.
+3. Nhân viên đã nhập nghỉ trong ngày không xuất hiện trong dropdown nhập/sửa công việc ngày đó.
+4. Báo cáo có mục nhân viên nghỉ.
+5. Kiểm tra/chốt ngày và dashboard hiển thị riêng nhân viên nghỉ, không tính nhân viên nghỉ là thiếu giờ.
 
-- Không đổi kiến trúc hiện tại: Google Apps Script Web App + Google Sheet + GitHub/clasp.
-- Không sửa logic đã pass nếu không liên quan trực tiếp đến chốt ngày.
-- Không đổi cấu trúc sheet cũ theo hướng phá dữ liệu.
-- Chỉ thêm sheet mới `DATA_CHOT_NGAY` khi QL dùng chức năng kiểm tra/chốt ngày lần đầu.
+## Sheet mới tự tạo
 
-## File cập nhật
+`DATA_NHAN_VIEN_NGHI`
 
-Copy đè/thêm các file sau vào repo hiện tại:
+Header:
+
+```text
+ID | Ngay | SoThe | HoTen | LyDo | TrangThai | NguoiNhap | DeviceID | ThoiGianLuu | HuyBoi | ThoiGianHuy | LyDoHuy
+```
+
+Trạng thái:
+
+```text
+ACTIVE = đang có hiệu lực
+CANCELLED = đã hủy dòng nghỉ
+```
+
+## File thay đổi / thêm mới
+
+Copy đè:
 
 ```text
 src/Config.js
 src/Code.js
-src/SheetService.js
 src/WorkEntryService.js
 src/EntryManageService.js
 src/DailyConfirmService.js
+src/ReportService.js
+src/ManagerDashboardService.js
 frontend/Index.html
 frontend/Style.html
 frontend/Script.html
 PATCH_NOTES.md
 ```
 
-## Sheet mới tự tạo
-
-Khi QL bấm kiểm tra/chốt ngày, hệ thống tự tạo sheet:
+Thêm mới:
 
 ```text
-DATA_CHOT_NGAY
+src/EmployeeLeaveService.js
 ```
 
-Header dòng 4:
+## Luồng sử dụng
+
+1. QL mở app.
+2. Vào mục `🏖️ Nhân viên nghỉ`.
+3. Chọn ngày nghỉ.
+4. Chọn nhân viên.
+5. Nhập lý do nghỉ.
+6. Lưu.
+7. Khi nhập công việc ngày đó, nhân viên nghỉ sẽ không còn trong dropdown.
+8. Khi tạo báo cáo, báo cáo có dòng/mục nhân viên nghỉ.
+
+## Nguyên tắc giữ ổn định
+
+Không sửa logic đã pass:
 
 ```text
-Ngay | TrangThai | XacNhanBoi | ThoiGianXacNhan | GhiChu | MoLaiBoi | ThoiGianMoLai | LyDoMoLai
-```
-
-Trạng thái ngày:
-
-```text
-DRAFT      = Đang nhập
-CONFIRMED  = Đã xác nhận/chốt
-```
-
-## Chức năng thêm mới
-
-### 1. QL kiểm tra tổng giờ trong ngày
-
-Khu vực mới trên giao diện:
-
-```text
-✅ Kiểm tra / chốt ngày
-```
-
-Hiển thị:
-
-```text
-- Phiếu ACTIVE trong ngày
-- Phiếu DELETED trong ngày
-- Số nhân viên đủ 8h
-- Số nhân viên chưa đủ 8h
-- Số nhân viên vượt 8h nếu có lỗi dữ liệu cũ
-- Chi tiết giờ theo từng nhân viên
-```
-
-### 2. QL xác nhận/chốt ngày
-
-Khi QL xác nhận ngày:
-
-```text
-DATA_CHOT_NGAY.TrangThai = CONFIRMED
-```
-
-Ghi log:
-
-```text
-LOG_THAO_TAC.HanhDong = XAC_NHAN_NGAY
-```
-
-Nếu còn nhân viên vượt 8h, hệ thống không cho chốt ngày.
-
-### 3. Khóa thay đổi sau khi chốt
-
-Khi ngày đã `CONFIRMED`, hệ thống chặn:
-
-```text
-- Lưu phiếu mới trong ngày đó
-- Sửa phiếu trong ngày đó
-- Hủy mềm phiếu trong ngày đó
-```
-
-Muốn sửa dữ liệu, QL phải dùng nút:
-
-```text
-Mở lại ngày
-```
-
-và bắt buộc nhập lý do.
-
-### 4. QL mở lại ngày
-
-Khi mở lại ngày:
-
-```text
-DATA_CHOT_NGAY.TrangThai = DRAFT
-MoLaiBoi
-ThoiGianMoLai
-LyDoMoLai
-```
-
-Ghi log:
-
-```text
-LOG_THAO_TAC.HanhDong = MO_LAI_NGAY
+- Đăng ký thiết bị bằng DeviceID + DeviceToken
+- Lưu nhiều nhân viên
+- Kiểm tra 8h/người/ngày
+- Thêm hạng mục mới
+- Sửa phiếu
+- Hủy mềm phiếu
+- Chốt/mở lại ngày
+- Dashboard QL
 ```
 
 ## Test bắt buộc
 
-1. QL mở form, thấy khu vực `✅ Kiểm tra / chốt ngày`.
-2. NV mở form, không thấy khu vực chốt ngày.
-3. QL chọn ngày có dữ liệu, bấm `Kiểm tra tổng giờ trong ngày`.
-4. Hệ thống tự tạo sheet `DATA_CHOT_NGAY` nếu chưa có.
-5. Bảng tổng giờ hiển thị đủ trạng thái: chưa đủ / đủ 8h / vượt 8h.
-6. QL bấm `Xác nhận/chốt ngày`.
-7. Kiểm tra `DATA_CHOT_NGAY`: ngày chuyển `CONFIRMED`.
-8. Kiểm tra `LOG_THAO_TAC`: có `XAC_NHAN_NGAY`.
-9. Sau khi chốt ngày, thử lưu phiếu mới cùng ngày → phải bị chặn.
-10. Sau khi chốt ngày, thử sửa phiếu cùng ngày → phải bị chặn.
-11. Sau khi chốt ngày, thử hủy phiếu cùng ngày → phải bị chặn.
-12. QL nhập lý do và bấm `Mở lại ngày`.
-13. Kiểm tra `DATA_CHOT_NGAY`: ngày chuyển `DRAFT`, có `LyDoMoLai`.
-14. Sau khi mở lại, lưu/sửa/hủy phiếu hoạt động lại bình thường.
-15. Các chức năng đã pass V0.6 vẫn hoạt động:
-    - Lưu nhiều nhân viên
-    - Đăng ký thiết bị
-    - Báo cáo
-    - Quản lý phiếu
-    - Xóa mềm
-    - Sửa phiếu
-    - UI mobile mở/thu gọn
+1. QL không xuất hiện trong dropdown nhân viên khi nhập công việc.
+2. NV đang làm, không phải QL, vẫn xuất hiện nếu chưa đủ 8h và không nghỉ.
+3. QL nhập một nhân viên nghỉ cho ngày mai.
+4. Chọn ngày mai ở mục nhập công việc → nhân viên đó không còn trong dropdown.
+5. Hủy dòng nghỉ → chọn lại ngày đó → nhân viên xuất hiện lại nếu còn giờ.
+6. Nhập nghỉ trùng cùng nhân viên/cùng ngày → hệ thống chặn.
+7. Nhập nghỉ cho nhân viên quyền QL → hệ thống chặn.
+8. Ngày đã chốt → không cho thêm/hủy nhân viên nghỉ cho ngày đó.
+9. Tạo báo cáo → REPORT_NHAN_VIEN_NGAY có dòng `NGHỈ`.
+10. Tạo báo cáo → REPORT_HANG_MUC_NGAY có dòng `Nhân viên nghỉ`.
+11. Kiểm tra/chốt ngày hiển thị số lượng nghỉ riêng.
+12. Lưu/sửa/hủy/chốt/báo cáo các chức năng cũ vẫn pass.
 
-## Chốt pass
-
-Nếu test pass, chốt:
+Nếu pass, chốt:
 
 ```text
-V0.7_DAILY_LOCK_AND_CONFIRM_FLOW_TEST_PASS
+V0.10_EMPLOYEE_LEAVE_FILTER_TEST_PASS
 ```

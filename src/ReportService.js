@@ -1,6 +1,6 @@
 /**
  * VNPS Work Assign - ReportService
- * Version: V0.4_EDIT_DELETE_ENTRY
+ * Version: V0.10_EMPLOYEE_LEAVE_FILTER
  *
  * Phạm vi V0.3:
  * - Dựng REPORT_NHAN_VIEN_NGAY.
@@ -108,6 +108,15 @@ function getWorkDetailRowsInRange_(dateKeys) {
     .filter(r => !!activePhieuMap[String(r.PhieuID || '').trim()]);
 }
 
+function getEmployeeLeaveRowsInRange_(dateKeys) {
+  const dateSet = {};
+  dateKeys.forEach(d => dateSet[d] = true);
+  ensureEmployeeLeaveSheet_();
+  return readObjects_(SHEETS.DATA_NHAN_VIEN_NGHI)
+    .filter(r => dateSet[dateKey_(r.Ngay)])
+    .filter(isActiveEmployeeLeave_);
+}
+
 function buildEmployeeReportValues_(fromDate, toDate) {
   const dateKeys = getDateRangeKeys_(fromDate, toDate);
   const detailRows = getWorkDetailRowsInRange_(dateKeys);
@@ -141,14 +150,29 @@ function buildEmployeeReportValues_(fromDate, toDate) {
     group[key].details.push(hangMuc + ' ' + soGio + 'h');
   });
 
+  getEmployeeLeaveRowsInRange_(dateKeys).forEach(r => {
+    const ngay = dateKey_(r.Ngay);
+    const soThe = String(r.SoThe || '').trim();
+    if (!ngay || !soThe) return;
+    const key = ngay + '|' + soThe + '|NGHI';
+    group[key] = {
+      ngay,
+      soThe,
+      hoTen: clientSafeText_(r.HoTen) || (employees[soThe] ? employees[soThe].HoTen : ''),
+      tongGio: 0,
+      details: ['NGHỈ: ' + clientSafeText_(r.LyDo || 'Có đăng ký nghỉ')],
+      forceStatus: 'NGHỈ'
+    };
+  });
+
   const values = [['Ngay','SoThe','HoTen','TongGio','ChiTietCongViec','TrangThaiGio']];
   Object.keys(group)
     .sort()
     .forEach(key => {
       const g = group[key];
-      let status = 'Chưa đủ';
-      if (g.tongGio === APP.MAX_HOURS_PER_DAY) status = 'Đủ 8h';
-      if (g.tongGio > APP.MAX_HOURS_PER_DAY) status = 'Vượt 8h';
+      let status = g.forceStatus || 'Chưa đủ';
+      if (!g.forceStatus && g.tongGio === APP.MAX_HOURS_PER_DAY) status = 'Đủ 8h';
+      if (!g.forceStatus && g.tongGio > APP.MAX_HOURS_PER_DAY) status = 'Vượt 8h';
       values.push([g.ngay, g.soThe, g.hoTen, g.tongGio, g.details.join('; '), status]);
     });
 
@@ -217,6 +241,18 @@ function buildJobDailyReportValues_(fromDate, toDate) {
   });
   values.push(totalRow);
 
+  const leaveRows = getEmployeeLeaveRowsInRange_(dateKeys);
+  const leaveByDate = {};
+  leaveRows.forEach(r => {
+    const ngay = dateKey_(r.Ngay);
+    if (!leaveByDate[ngay]) leaveByDate[ngay] = [];
+    const label = String(r.SoThe || '').trim() + (r.HoTen ? '-' + clientSafeText_(r.HoTen) : '') + (r.LyDo ? ' (' + clientSafeText_(r.LyDo) + ')' : '');
+    leaveByDate[ngay].push(label);
+  });
+  const leaveReportRow = ['', 'Nhân viên nghỉ'];
+  dateKeys.forEach(ngay => leaveReportRow.push((leaveByDate[ngay] || []).join(', ')));
+  values.push(leaveReportRow);
+
   return values;
 }
 
@@ -225,7 +261,7 @@ function generateBasicReports(payload) {
   if (!payload.deviceId) throw new Error('Thiếu DeviceID.');
   if (!payload.fromDate || !payload.toDate) throw new Error('Thiếu từ ngày/đến ngày.');
 
-  const context = getDeviceContext(payload.deviceId);
+  const context = getDeviceContext(payload.deviceId, payload.deviceToken);
   if (!context.ok) throw new Error(context.reason);
   if (!context.isQL) throw new Error('Chỉ QL được tạo báo cáo.');
 

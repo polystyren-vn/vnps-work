@@ -1,6 +1,6 @@
 /**
  * VNPS Work Assign - DailyConfirmService
- * Version: V0.7_DAILY_LOCK_AND_CONFIRM_FLOW
+ * Version: V0.10_EMPLOYEE_LEAVE_FILTER
  *
  * Phạm vi:
  * - Tạo sheet DATA_CHOT_NGAY tự động nếu chưa có.
@@ -107,7 +107,8 @@ function buildDailyEmployeeSummary_(ngay) {
   const key = dateKey_(ngay);
   if (!key) throw new Error('Ngày kiểm tra không hợp lệ.');
 
-  const activeEmployees = listActiveEmployees();
+  const activeEmployees = listActiveWorkEmployees_(); // V0.10: loại QL khỏi nhóm phân công công việc.
+  const leaveMap = getActiveLeaveMapByDate_(key);
   const employeeMap = {};
   const group = {};
 
@@ -115,11 +116,13 @@ function buildDailyEmployeeSummary_(ngay) {
     const soThe = String(e.soThe || '').trim();
     if (!soThe) return;
     employeeMap[soThe] = e;
+    const leaveRows = leaveMap[soThe] || [];
     group[soThe] = {
       soThe,
       hoTen: e.hoTen || '',
       tongGio: 0,
-      chiTiet: []
+      chiTiet: leaveRows.length ? ['Nghỉ: ' + clientSafeText_(leaveRows[0].LyDo || 'Có đăng ký nghỉ')] : [],
+      isLeave: leaveRows.length > 0
     };
   });
 
@@ -135,12 +138,15 @@ function buildDailyEmployeeSummary_(ngay) {
     const soThe = String(r.SoThe || '').trim();
     if (!soThe) return;
     if (!group[soThe]) {
+      // Dữ liệu cũ có thể chứa nhân viên QL/đã khóa; vẫn hiển thị để QL phát hiện và sửa.
       group[soThe] = {
         soThe,
         hoTen: employeeMap[soThe] ? employeeMap[soThe].hoTen : '',
         tongGio: 0,
-        chiTiet: []
+        chiTiet: [],
+        isLeave: !!leaveMap[soThe]
       };
+      if (group[soThe].isLeave) group[soThe].chiTiet.push('Nghỉ: ' + clientSafeText_(leaveMap[soThe][0].LyDo || 'Có đăng ký nghỉ'));
     }
 
     const gio = Number(r.SoGio || 0);
@@ -153,28 +159,37 @@ function buildDailyEmployeeSummary_(ngay) {
     const item = group[soThe];
     let trangThaiGio = 'Chưa đủ';
     let statusCode = 'SHORT';
-    if (Number(item.tongGio) === APP.MAX_HOURS_PER_DAY) {
+
+    if (item.isLeave && Number(item.tongGio || 0) <= 0) {
+      trangThaiGio = 'Nghỉ';
+      statusCode = 'LEAVE';
+    } else if (item.isLeave && Number(item.tongGio || 0) > 0) {
+      trangThaiGio = 'Nghỉ nhưng có giờ';
+      statusCode = 'OVER';
+    } else if (Number(item.tongGio) === APP.MAX_HOURS_PER_DAY) {
       trangThaiGio = 'Đủ 8h';
       statusCode = 'OK';
-    }
-    if (Number(item.tongGio) > APP.MAX_HOURS_PER_DAY) {
+    } else if (Number(item.tongGio) > APP.MAX_HOURS_PER_DAY) {
       trangThaiGio = 'Vượt 8h';
       statusCode = 'OVER';
     }
+
     return {
       soThe: item.soThe,
       hoTen: item.hoTen || '',
       tongGio: Number(item.tongGio || 0),
       chiTiet: item.chiTiet.join('; '),
       trangThaiGio,
-      statusCode
+      statusCode,
+      isLeave: !!item.isLeave
     };
   });
 
-  const counts = { short: 0, ok: 0, over: 0, total: rows.length };
+  const counts = { short: 0, ok: 0, over: 0, leave: 0, total: rows.length };
   rows.forEach(r => {
     if (r.statusCode === 'OK') counts.ok++;
     else if (r.statusCode === 'OVER') counts.over++;
+    else if (r.statusCode === 'LEAVE') counts.leave++;
     else counts.short++;
   });
 
@@ -182,8 +197,10 @@ function buildDailyEmployeeSummary_(ngay) {
     ngay: key,
     activeEntries: headerInfo.activeEntries,
     deletedEntries: headerInfo.deletedEntries,
+    leaveEntries: counts.leave,
     counts,
-    employees: rows
+    employees: rows,
+    leaves: listEmployeeLeavesForClient_(key)
   };
 }
 
@@ -226,7 +243,7 @@ function requireQlContextForDaily_(payload) {
   if (!payload.deviceId) throw new Error('Thiếu DeviceID.');
   if (!payload.ngay) throw new Error('Thiếu ngày cần kiểm tra/chốt.');
 
-  const context = getDeviceContext(payload.deviceId);
+  const context = getDeviceContext(payload.deviceId, payload.deviceToken);
   if (!context.ok) throw new Error(context.reason);
   if (!context.isQL) throw new Error('Chỉ QL được kiểm tra/chốt ngày.');
   return context;

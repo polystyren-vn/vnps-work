@@ -1,6 +1,6 @@
 function doGet(e) {
   const t = HtmlService.createTemplateFromFile('frontend/Index');
-  t.deviceId = (e && e.parameter && e.parameter.deviceId) || '';
+  t.deviceId = (e && e.parameter && e.parameter.deviceId) || ''; // V0.9: chỉ giữ để cảnh báo link cũ, không dùng làm khóa đăng nhập
   t.appVersion = APP.VERSION;
   return t.evaluate()
     .setTitle('VNPS Work Assign')
@@ -11,15 +11,17 @@ function include(filename) {
   return HtmlService.createHtmlOutputFromFile(filename).getContent();
 }
 
-function apiInit(deviceId, ngay) {
-  const context = getDeviceContext(deviceId);
+function apiInit(authPayload, ngay) {
+  const payload = normalizeApiAuthPayload_(authPayload, ngay);
+  const context = getDeviceContext(payload.deviceId, payload.deviceToken);
   if (!context.ok) {
     return {
       ok: false,
       code: context.code || 'ACCESS_DENIED',
       reason: context.reason,
-      deviceId: context.deviceId || deviceId || '',
+      deviceId: context.deviceId || payload.deviceId || '',
       canRegister: !!context.canRegister,
+      pending: !!context.pending,
       version: APP.VERSION
     };
   }
@@ -35,12 +37,13 @@ function apiInit(deviceId, ngay) {
       isQL: context.isQL
     },
     jobs: listJobs(context),
-    employees: getAvailableEmployees(ngay || Utilities.formatDate(new Date(), APP.TIMEZONE, 'yyyy-MM-dd'))
+    employees: getAvailableEmployees(payload.ngay || Utilities.formatDate(new Date(), APP.TIMEZONE, 'yyyy-MM-dd'))
   };
 }
 
-function apiGetAvailableEmployees(deviceId, ngay) {
-  const context = getDeviceContext(deviceId);
+function apiGetAvailableEmployees(authPayload, ngay) {
+  const payload = normalizeApiAuthPayload_(authPayload, ngay);
+  const context = getDeviceContext(payload.deviceId, payload.deviceToken);
   if (!context.ok) {
     return {
       ok: false,
@@ -49,11 +52,34 @@ function apiGetAvailableEmployees(deviceId, ngay) {
       canRegister: !!context.canRegister
     };
   }
-  return { ok: true, employees: getAvailableEmployees(ngay) };
+  return { ok: true, employees: getAvailableEmployees(payload.ngay) };
+}
+
+function normalizeApiAuthPayload_(authPayload, ngay) {
+  if (authPayload && typeof authPayload === 'object') {
+    return {
+      deviceId: String(authPayload.deviceId || '').trim(),
+      deviceToken: String(authPayload.deviceToken || '').trim(),
+      ngay: authPayload.ngay || ngay || ''
+    };
+  }
+  return {
+    deviceId: String(authPayload || '').trim(),
+    deviceToken: '',
+    ngay: ngay || ''
+  };
 }
 
 function apiRegisterDevice(payload) {
   return registerDevice(payload);
+}
+
+function apiListPendingDevices(payload) {
+  return listPendingDevicesForApprove(payload);
+}
+
+function apiApproveDevice(payload) {
+  return approvePendingDevice(payload);
 }
 
 function apiSaveWorkEntry(payload) {
@@ -90,4 +116,20 @@ function apiConfirmDaily(payload) {
 
 function apiReopenDaily(payload) {
   return reopenDaily(payload);
+}
+
+function apiGetManagerDashboard(payload) {
+  return getManagerDashboardOverview(payload);
+}
+
+function apiGetEmployeeLeaveInfo(payload) {
+  return getEmployeeLeaveInfo(payload);
+}
+
+function apiSaveEmployeeLeave(payload) {
+  return saveEmployeeLeave(payload);
+}
+
+function apiCancelEmployeeLeave(payload) {
+  return cancelEmployeeLeave(payload);
 }

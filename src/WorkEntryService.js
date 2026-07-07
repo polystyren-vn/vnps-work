@@ -16,7 +16,7 @@ function getUsedHoursByDate_(ngay) {
 
 function getAvailableEmployees(ngay) {
   const used = getUsedHoursByDate_(ngay);
-  return listActiveEmployees()
+  return listAssignableEmployeesByDate_(ngay)
     .map(e => {
       const daDung = used[e.soThe] || 0;
       const conLai = Math.max(0, APP.MAX_HOURS_PER_DAY - daDung);
@@ -89,6 +89,7 @@ function validateWorkEntryPayload_(payload) {
   payload = normalizeNhanSuPayload_(payload);
 
   if (!payload.deviceId) throw new Error('Thiếu DeviceID.');
+  if (!payload.deviceToken) throw new Error('Thiếu mã bảo mật trình duyệt. Hãy tải lại form.');
   if (!payload.ngay) throw new Error('Thiếu ngày.');
   if (!payload.maCongViec) throw new Error('Thiếu hạng mục công việc.');
   if (!payload.nhanSu || !payload.nhanSu.length) throw new Error('Chưa chọn nhân viên.');
@@ -111,7 +112,7 @@ function saveWorkEntry(payload) {
   lock.waitLock(30000);
 
   try {
-    const context = getDeviceContext(payload.deviceId);
+    const context = getDeviceContext(payload.deviceId, payload.deviceToken);
     if (!context.ok) throw new Error(context.reason);
 
     // V0.7: ngày đã xác nhận/chốt thì không được phát sinh phiếu mới.
@@ -126,6 +127,8 @@ function saveWorkEntry(payload) {
       const gio = Number(item.soGio);
       batchAdd[soThe] = (batchAdd[soThe] || 0) + gio;
     });
+
+    validateEmployeesAssignableForDate_(payload.ngay, Object.keys(batchAdd));
 
     Object.keys(batchAdd).forEach(soThe => {
       const total = (used[soThe] || 0) + batchAdd[soThe];

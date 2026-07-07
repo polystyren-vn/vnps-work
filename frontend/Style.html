@@ -228,7 +228,7 @@
     font-size: 20px;
     padding: 15px;
   }
-  .report, .manage, .daily {
+  .report, .manage, .daily, .dashboard {
     width: 100%;
     margin-top: 18px;
     font-size: 19px;
@@ -247,6 +247,96 @@
   .emp-row button, .edit-emp-row button {
     background: #ef4444;
     padding: 12px 0;
+  }
+
+  .dashboard-content { margin-top: 12px; }
+  .dashboard-status {
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    padding: 12px;
+    display: flex;
+    justify-content: space-between;
+    gap: 10px;
+    align-items: center;
+    background: #f8fafc;
+  }
+  .dashboard-status span {
+    display: block;
+    margin-top: 4px;
+    font-size: 13px;
+    color: #475569;
+  }
+  .dashboard-status strong {
+    border-radius: 999px;
+    padding: 7px 10px;
+    font-size: 13px;
+    white-space: nowrap;
+  }
+  .dashboard-status.ok-level { border-color: #86efac; background: #f0fdf4; }
+  .dashboard-status.ok-level strong { background: #dcfce7; color: #166534; }
+  .dashboard-status.warn-level { border-color: #fde68a; background: #fffbeb; }
+  .dashboard-status.warn-level strong { background: #fef3c7; color: #92400e; }
+  .dashboard-status.danger { border-color: #fecaca; background: #fef2f2; }
+  .dashboard-status.danger strong { background: #fee2e2; color: #991b1b; }
+  .dashboard-status.locked { border-color: #bfdbfe; background: #eff6ff; }
+  .dashboard-status.locked strong { background: #dbeafe; color: #1e40af; }
+  .dashboard-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+    margin-top: 10px;
+  }
+  .dash-card {
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    padding: 10px;
+    background: #fff;
+    min-width: 0;
+  }
+  .dash-card span {
+    display: block;
+    color: var(--muted);
+    font-size: 13px;
+    font-weight: 700;
+  }
+  .dash-card b {
+    display: block;
+    margin-top: 3px;
+    font-size: 24px;
+    line-height: 1.1;
+  }
+  .dash-card.ok { border-color: #86efac; background: #f0fdf4; }
+  .dash-card.warn-card { border-color: #fde68a; background: #fffbeb; }
+  .dash-card.danger-card { border-color: #fecaca; background: #fef2f2; }
+  .dashboard-alerts {
+    margin-top: 10px;
+    border: 1px solid #bae6fd;
+    background: #f0f9ff;
+    color: #075985;
+    border-radius: 12px;
+    padding: 10px 12px;
+  }
+  .dashboard-alerts ul {
+    margin: 6px 0 0 18px;
+    padding: 0;
+  }
+  .dashboard-alerts li { margin-top: 4px; }
+  .dashboard-updated {
+    margin: 8px 0 0;
+    color: var(--muted);
+    font-size: 13px;
+    font-weight: 700;
+  }
+  .quick-actions {
+    margin-top: 12px;
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+  }
+  .quick-actions button {
+    background: #0f766e;
+    font-size: 15px;
+    min-height: 46px;
   }
 
   .entry-list { margin-top: 12px; }
@@ -354,6 +444,18 @@
   .daily-hours b, .daily-hours span { display: block; }
   .daily-hours span { font-size: 13px; color: #475569; }
 
+
+  .device-list { margin-top: 10px; }
+  .device-card {
+    border: 1px solid #bfdbfe;
+    background: #eff6ff;
+    border-radius: 12px;
+    padding: 12px;
+    margin-top: 10px;
+  }
+  .device-card label { margin-top: 10px; }
+  .device-card button { margin-top: 8px; width: 100%; }
+
   .entry-edit {
     margin-top: 14px;
     border: 1px solid #99f6e4;
@@ -420,6 +522,8 @@
     .edit-actions, .daily-actions { grid-template-columns: 1fr; }
     .entry-actions { display: grid; grid-template-columns: 1fr; }
     .daily-counts { grid-template-columns: 1fr; }
+    .dashboard-status { align-items: flex-start; flex-direction: column; }
+    .dashboard-grid, .quick-actions { grid-template-columns: 1fr; }
     .daily-employee { grid-template-columns: 1fr; }
     .daily-hours { text-align: left; }
     .small-action { padding-left: 10px; padding-right: 10px; }
@@ -429,5 +533,38 @@
     .section-toggle { gap: 8px; }
     .emp-row, .edit-emp-row { grid-template-columns: 1fr; }
     .emp-row button, .edit-emp-row button { width: 100%; }
+  }
+</style>
+
+<style>
+  /* V0.10 - Nhân viên nghỉ */
+  .leave-actions {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+    margin-top: 12px;
+  }
+  .leave-list { margin-top: 10px; }
+  .leave-card-item {
+    border: 1px solid #fed7aa;
+    background: #fff7ed;
+    border-radius: 12px;
+    padding: 10px;
+    margin-top: 10px;
+  }
+  .daily-employee.leave-hours {
+    background: #eff6ff;
+    border-color: #bfdbfe;
+  }
+  .daily-employee.leave-hours .daily-hours {
+    color: #1d4ed8;
+  }
+  .dash-card.leave-card {
+    background: #eff6ff;
+    border-color: #bfdbfe;
+  }
+  .dash-card.leave-card b { color: #1d4ed8; }
+  @media (max-width: 520px) {
+    .leave-actions { grid-template-columns: 1fr; }
   }
 </style>

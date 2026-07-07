@@ -1,6 +1,6 @@
 /**
  * VNPS Work Assign - EntryManageService
- * Version: V0.7_DAILY_LOCK_AND_CONFIRM_FLOW
+ * Version: V0.10_EMPLOYEE_LEAVE_FILTER
  *
  * Phạm vi:
  * - Quản lý phiếu cho QL.
@@ -62,7 +62,7 @@ function listWorkEntriesForManage(payload) {
   if (!payload.deviceId) throw new Error('Thiếu DeviceID.');
   if (!payload.ngay) throw new Error('Thiếu ngày tải phiếu.');
 
-  const context = getDeviceContext(payload.deviceId);
+  const context = getDeviceContext(payload.deviceId, payload.deviceToken);
   if (!context.ok) throw new Error(context.reason);
   if (!context.isQL) throw new Error('Chỉ QL được xem/quản lý phiếu.');
 
@@ -148,7 +148,7 @@ function getUsedHoursByDateExcludingPhieu_(ngay, excludePhieuId) {
 
 function getAvailableEmployeesForEdit_(ngay, phieuId) {
   const used = getUsedHoursByDateExcludingPhieu_(ngay, phieuId);
-  return listActiveEmployees()
+  return listAssignableEmployeesByDate_(ngay)
     .map(e => {
       const daDung = used[e.soThe] || 0;
       const conLai = Math.max(0, APP.MAX_HOURS_PER_DAY - daDung);
@@ -163,7 +163,7 @@ function getWorkEntryDetailForEdit(payload) {
   const phieuId = String(payload.phieuId || '').trim();
   if (!phieuId) throw new Error('Thiếu mã phiếu cần sửa.');
 
-  const context = getDeviceContext(payload.deviceId);
+  const context = getDeviceContext(payload.deviceId, payload.deviceToken);
   if (!context.ok) throw new Error(context.reason);
   if (!context.isQL) throw new Error('Chỉ QL được sửa phiếu.');
 
@@ -233,7 +233,7 @@ function updateWorkEntryDetail(payload) {
   lock.waitLock(30000);
 
   try {
-    const context = getDeviceContext(payload.deviceId);
+    const context = getDeviceContext(payload.deviceId, payload.deviceToken);
     if (!context.ok) throw new Error(context.reason);
     if (!context.isQL) throw new Error('Chỉ QL được sửa phiếu.');
 
@@ -246,15 +246,14 @@ function updateWorkEntryDetail(payload) {
     // V0.7: ngày đã xác nhận/chốt thì phải mở lại trước khi sửa phiếu.
     assertDailyOpenForChange_(ngayKey, 'sửa phiếu');
     const maCongViec = String(row.MaCongViec || '').trim();
-    const activeEmployeeMap = {};
-    listActiveEmployees().forEach(e => activeEmployeeMap[e.soThe] = true);
 
     const batchAdd = {};
     payload.nhanSu.forEach(item => {
       const soThe = String(item.soThe || '').trim();
-      if (!activeEmployeeMap[soThe]) throw new Error('Số thẻ ' + soThe + ' không hợp lệ hoặc đã nghỉ/khóa.');
       batchAdd[soThe] = (batchAdd[soThe] || 0) + Number(item.soGio || 0);
     });
+
+    validateEmployeesAssignableForDate_(ngayKey, Object.keys(batchAdd));
 
     const used = getUsedHoursByDateExcludingPhieu_(ngayKey, phieuId);
     Object.keys(batchAdd).forEach(soThe => {
@@ -312,7 +311,7 @@ function softDeleteWorkEntry(payload) {
   lock.waitLock(30000);
 
   try {
-    const context = getDeviceContext(payload.deviceId);
+    const context = getDeviceContext(payload.deviceId, payload.deviceToken);
     if (!context.ok) throw new Error(context.reason);
     if (!context.isQL) throw new Error('Chỉ QL được hủy phiếu.');
 

@@ -18,13 +18,14 @@
       <main id="blocked" class="card hidden">
         <h2>Không thể vào form</h2>
         <p id="blockedReason"></p>
+        <button class="secondary" type="button" onclick="resetBrowserDevice()">Đăng ký lại trên trình duyệt này</button>
       </main>
 
       <main id="registerArea" class="card hidden">
         <h2>Đăng ký thiết bị</h2>
-        <p class="hint">Thiết bị này chưa có trong danh sách được phép sử dụng. Sau khi gửi đăng ký, quản lý cần duyệt trong sheet <b>DM_THIET_BI</b>.</p>
+        <p class="hint">Thiết bị/trình duyệt này chưa được duyệt. Hệ thống sẽ tự tạo mã thiết bị riêng cho trình duyệt hiện tại. Sau khi gửi đăng ký, QL duyệt trong app. Nếu dùng trình duyệt khác hoặc xóa dữ liệu trình duyệt, thiết bị phải đăng ký lại.</p>
 
-        <label>DeviceID</label>
+        <label>DeviceID trình duyệt</label>
         <input id="regDeviceId" type="text" readonly>
 
         <label>Tên thiết bị</label>
@@ -37,19 +38,70 @@
         <textarea id="regGhiChu" rows="2" placeholder="Không bắt buộc"></textarea>
 
         <button class="save" type="button" onclick="submitDeviceRegister()">Gửi đăng ký thiết bị</button>
+        <button class="secondary" type="button" onclick="resetBrowserDevice()">Đăng ký lại trên trình duyệt này</button>
         <p id="registerMessage" class="message-line"></p>
       </main>
 
       <main id="pendingArea" class="card pending hidden">
         <h2>Thiết bị đang chờ duyệt</h2>
         <p id="pendingReason"></p>
-        <p>Hãy báo quản lý đổi trạng thái thiết bị trong <b>DM_THIET_BI</b> từ <b>Chờ duyệt</b> sang <b>Hoạt động</b>, sau đó tải lại form.</p>
+        <p>Hãy báo QL mở app bằng thiết bị đã được duyệt, vào mục <b>Duyệt thiết bị</b> và duyệt thiết bị này, sau đó tải lại form.</p>
+        <button class="secondary" type="button" onclick="resetBrowserDevice()">Đăng ký lại trên trình duyệt này</button>
       </main>
 
       <main id="formArea" class="hidden">
         <section class="card identity-card">
           <div class="userbar">
             <span id="userInfo"></span>
+          </div>
+        </section>
+
+
+
+        <section id="dashboardBox" class="section-card dashboard-box hidden">
+          <button class="section-toggle" type="button" onclick="toggleSection('dashboardBox')">
+            <span>
+              <span class="section-title">📌 Tổng quan QL</span>
+              <span class="section-subtitle">Xem nhanh tình trạng ngày đang theo dõi</span>
+            </span>
+            <span class="section-state">Thu gọn</span>
+          </button>
+
+          <div class="section-body">
+            <p class="hint">Dashboard chỉ đọc dữ liệu tổng hợp. Không thay đổi logic lưu, sửa, hủy, báo cáo hoặc chốt ngày.</p>
+
+            <label>Ngày tổng quan</label>
+            <input id="dashboardDate" type="date">
+
+            <button class="dashboard" type="button" onclick="loadManagerDashboard(false)">Cập nhật tổng quan</button>
+            <p id="dashboardMessage" class="message-line"></p>
+            <div id="dashboardContent" class="dashboard-content"></div>
+
+            <div class="quick-actions">
+              <button type="button" onclick="goDashboardTarget('workSection')">Nhập công việc</button>
+              <button type="button" onclick="goDashboardTarget('deviceApproveBox')">Duyệt thiết bị</button>
+              <button type="button" onclick="goDashboardTarget('leaveBox')">Nhân viên nghỉ</button>
+              <button type="button" onclick="goDashboardTarget('manageBox')">Quản lý phiếu</button>
+              <button type="button" onclick="goDashboardTarget('dailyBox')">Chốt ngày</button>
+              <button type="button" onclick="goDashboardTarget('reportBox')">Báo cáo</button>
+            </div>
+          </div>
+        </section>
+
+        <section id="deviceApproveBox" class="section-card device-approve-box hidden collapsed">
+          <button class="section-toggle" type="button" onclick="toggleSection('deviceApproveBox')">
+            <span>
+              <span class="section-title">🔐 Duyệt thiết bị</span>
+              <span class="section-subtitle">QL duyệt thiết bị/trình duyệt mới đang chờ</span>
+            </span>
+            <span class="section-state">Mở</span>
+          </button>
+
+          <div class="section-body">
+            <p class="hint">Chỉ duyệt thiết bị khi đúng người phụ trách và đúng trình duyệt sử dụng thực tế. Link chia sẻ không tự đăng nhập được nếu thiếu mã bảo mật trình duyệt.</p>
+            <button class="manage" type="button" onclick="loadPendingDevices()">Tải thiết bị chờ duyệt</button>
+            <p id="deviceApproveMessage" class="message-line"></p>
+            <div id="pendingDeviceList" class="device-list"></div>
           </div>
         </section>
 
@@ -85,6 +137,36 @@
 
             <button class="save" type="button" onclick="saveForm()">Lưu công việc</button>
             <p id="message" class="message-line"></p>
+          </div>
+        </section>
+
+        <section id="leaveBox" class="section-card leave-box hidden collapsed">
+          <button class="section-toggle" type="button" onclick="toggleSection('leaveBox')">
+            <span>
+              <span class="section-title">🏖️ Nhân viên nghỉ</span>
+              <span class="section-subtitle">QL nhập nhân viên nghỉ để loại khỏi danh sách phân công</span>
+            </span>
+            <span class="section-state">Mở</span>
+          </button>
+
+          <div class="section-body">
+            <p class="hint">Nhân viên nghỉ trong ngày sẽ không xuất hiện trong dropdown nhập/sửa công việc. Nhân viên quyền QL cũng được loại khỏi danh sách phân công.</p>
+
+            <label>Ngày nghỉ</label>
+            <input id="leaveDate" type="date">
+
+            <label>Nhân viên nghỉ</label>
+            <select id="leaveSoThe"></select>
+
+            <label>Lý do nghỉ</label>
+            <textarea id="leaveReason" rows="2" placeholder="Ví dụ: Nghỉ phép, nghỉ việc riêng, báo trước tuần sau nghỉ..."></textarea>
+
+            <div class="leave-actions">
+              <button class="save" type="button" onclick="saveEmployeeLeave()">Lưu nhân viên nghỉ</button>
+              <button class="manage" type="button" onclick="loadEmployeeLeaveInfo()">Tải danh sách nghỉ</button>
+            </div>
+            <p id="leaveMessage" class="message-line"></p>
+            <div id="leaveList" class="leave-list"></div>
           </div>
         </section>
 

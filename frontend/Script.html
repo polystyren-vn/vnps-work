@@ -1,6 +1,9 @@
 <script>
   const state = {
-    deviceId: window.__DEVICE_ID__ || '',
+    // V0.9: deviceId trên URL chỉ dùng để cảnh báo link cũ. Đăng nhập thực tế dùng DeviceID + DeviceToken lưu riêng trong trình duyệt.
+    linkDeviceId: window.__DEVICE_ID__ || '',
+    deviceId: '',
+    deviceToken: '',
     context: null,
     version: '',
     jobs: [],
@@ -8,13 +11,80 @@
     entries: [],
     dailyStatus: null,
     dailySummary: null,
+    dashboard: null,
+    pendingDevices: [],
     editEmployees: [],
-    editingEntry: null
+    editingEntry: null,
+    leaveEmployees: [],
+    employeeLeaves: []
   };
 
   function todayText() {
     const d = new Date();
     return d.toISOString().slice(0, 10);
+  }
+
+  const DEVICE_AUTH_KEY = 'VNPS_WORK_ASSIGN_DEVICE_AUTH_V1';
+
+  function randomPart(length) {
+    const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+    let out = '';
+    if (window.crypto && window.crypto.getRandomValues) {
+      const arr = new Uint32Array(length);
+      window.crypto.getRandomValues(arr);
+      for (let i = 0; i < length; i++) out += chars[arr[i] % chars.length];
+      return out;
+    }
+    for (let i = 0; i < length; i++) out += chars[Math.floor(Math.random() * chars.length)];
+    return out;
+  }
+
+  function createBrowserAuth() {
+    const d = new Date();
+    const datePart = d.toISOString().slice(0, 10).replace(/-/g, '');
+    return {
+      deviceId: 'DEV_' + datePart + '_' + randomPart(8),
+      deviceToken: randomPart(32),
+      createdAt: new Date().toISOString()
+    };
+  }
+
+  function loadBrowserAuth() {
+    try {
+      const raw = localStorage.getItem(DEVICE_AUTH_KEY);
+      if (!raw) return null;
+      const parsed = JSON.parse(raw);
+      if (!parsed || !parsed.deviceId || !parsed.deviceToken) return null;
+      return parsed;
+    } catch (err) {
+      return null;
+    }
+  }
+
+  function saveBrowserAuth(auth) {
+    localStorage.setItem(DEVICE_AUTH_KEY, JSON.stringify(auth));
+  }
+
+  function getOrCreateBrowserAuth() {
+    let auth = loadBrowserAuth();
+    if (!auth) {
+      auth = createBrowserAuth();
+      saveBrowserAuth(auth);
+    }
+    return auth;
+  }
+
+  function resetBrowserDevice() {
+    if (!confirm('Đăng ký lại thiết bị trên trình duyệt này? Thiết bị hiện tại sẽ mất quyền trên trình duyệt này và phải chờ QL duyệt lại.')) return;
+    localStorage.removeItem(DEVICE_AUTH_KEY);
+    location.href = location.origin + location.pathname;
+  }
+
+  function authPayload(extra) {
+    return Object.assign({
+      deviceId: state.deviceId,
+      deviceToken: state.deviceToken
+    }, extra || {});
   }
 
   function setMessage(text, ok) {
@@ -36,6 +106,18 @@
     el.className = ok ? 'ok' : 'error';
   }
 
+  function setDashboardMessage(text, ok) {
+    const el = document.getElementById('dashboardMessage');
+    if (!el) return;
+    if (!text) {
+      el.textContent = '';
+      el.className = 'message-line';
+      return;
+    }
+    el.textContent = text;
+    el.className = ok ? 'ok' : 'error';
+  }
+
   function setDailyMessage(text, ok) {
     const el = document.getElementById('dailyMessage');
     if (!el) return;
@@ -45,6 +127,13 @@
 
   function setManageMessage(text, ok) {
     const el = document.getElementById('manageMessage');
+    if (!el) return;
+    el.textContent = text || '';
+    el.className = ok ? 'ok' : 'error';
+  }
+
+  function setLeaveMessage(text, ok) {
+    const el = document.getElementById('leaveMessage');
     if (!el) return;
     el.textContent = text || '';
     el.className = ok ? 'ok' : 'error';
@@ -79,7 +168,10 @@
   }
 
   function resetMobileSections() {
+    setSectionCollapsed('dashboardBox', false);
+    setSectionCollapsed('deviceApproveBox', true);
     setSectionCollapsed('workSection', false);
+    setSectionCollapsed('leaveBox', true);
     setSectionCollapsed('manageBox', true);
     setSectionCollapsed('dailyBox', true);
     setSectionCollapsed('reportBox', true);
@@ -88,10 +180,9 @@
   function init() {
     document.getElementById('ngay').value = todayText();
 
-    if (!state.deviceId) {
-      showBlocked('Thiếu DeviceID. Hãy mở link có dạng ?deviceId=PC_TO_01');
-      return;
-    }
+    const auth = getOrCreateBrowserAuth();
+    state.deviceId = auth.deviceId;
+    state.deviceToken = auth.deviceToken;
 
     google.script.run
       .withSuccessHandler(res => {
@@ -106,7 +197,7 @@
         renderForm();
       })
       .withFailureHandler(err => showBlocked(err.message))
-      .apiInit(state.deviceId, document.getElementById('ngay').value);
+      .apiInit(authPayload({ ngay: document.getElementById('ngay').value }));
   }
 
   function handleInitBlocked(res) {
@@ -134,7 +225,8 @@
     hideAllAreas();
     document.getElementById('status').textContent = 'Thiết bị chưa đăng ký';
     document.getElementById('regDeviceId').value = deviceId || state.deviceId;
-    setRegisterMessage(reason || 'Vui lòng gửi thông tin đăng ký thiết bị.', 'warn');
+    const legacyHint = state.linkDeviceId ? ' Link có deviceId cũ chỉ dùng để tham khảo; quyền đăng nhập sẽ gắn với trình duyệt hiện tại.' : '';
+    setRegisterMessage((reason || 'Vui lòng gửi thông tin đăng ký thiết bị.') + legacyHint, 'warn');
     document.getElementById('registerArea').classList.remove('hidden');
   }
 
@@ -148,6 +240,7 @@
   function submitDeviceRegister() {
     const payload = {
       deviceId: document.getElementById('regDeviceId').value,
+      deviceToken: state.deviceToken,
       tenThietBi: document.getElementById('regTenThietBi').value,
       soTheDangKy: document.getElementById('regSoThe').value,
       ghiChu: document.getElementById('regGhiChu').value
@@ -191,6 +284,27 @@
       </div>
     `;
 
+    const dashboardBox = document.getElementById('dashboardBox');
+    if (dashboardBox) {
+      dashboardBox.classList.toggle('hidden', !state.context.isQL);
+      document.getElementById('dashboardDate').value = document.getElementById('ngay').value || todayText();
+      renderManagerDashboard(null);
+      if (state.context.isQL) loadManagerDashboard(true);
+    }
+
+    const deviceApproveBox = document.getElementById('deviceApproveBox');
+    if (deviceApproveBox) {
+      deviceApproveBox.classList.toggle('hidden', !state.context.isQL);
+      renderPendingDevices();
+    }
+
+    const leaveBox = document.getElementById('leaveBox');
+    if (leaveBox) {
+      leaveBox.classList.toggle('hidden', !state.context.isQL);
+      document.getElementById('leaveDate').value = document.getElementById('ngay').value || todayText();
+      renderEmployeeLeaveInfo(null);
+    }
+
     const reportBox = document.getElementById('reportBox');
     if (reportBox) {
       reportBox.classList.toggle('hidden', !state.context.isQL);
@@ -226,9 +340,19 @@
       );
     };
 
-    document.getElementById('ngay').onchange = reloadEmployees;
+    document.getElementById('ngay').onchange = onWorkDateChange;
     document.getElementById('employeeRows').innerHTML = '';
     addEmployeeRow();
+  }
+
+  function onWorkDateChange() {
+    const workDate = document.getElementById('ngay').value || todayText();
+    const dashboardDate = document.getElementById('dashboardDate');
+    if (dashboardDate && state.context && state.context.isQL) dashboardDate.value = workDate;
+    const leaveDate = document.getElementById('leaveDate');
+    if (leaveDate && state.context && state.context.isQL) leaveDate.value = workDate;
+    reloadEmployees();
+    if (state.context && state.context.isQL) loadManagerDashboard(true);
   }
 
   function reloadEmployees() {
@@ -243,12 +367,12 @@
         addEmployeeRow();
       })
       .withFailureHandler(err => setMessage(err.message, false))
-      .apiGetAvailableEmployees(state.deviceId, document.getElementById('ngay').value);
+      .apiGetAvailableEmployees(authPayload({ ngay: document.getElementById('ngay').value }));
   }
 
   function buildEmployeeOptions() {
     return '<option value="">-- Số thẻ --</option>' + state.employees.map(e =>
-      `<option value="${e.soThe}" data-conlai="${e.conLai}">${e.soThe} · còn ${e.conLai}h</option>`
+      `<option value="${e.soThe}" data-conlai="${e.conLai}">${e.soThe}${e.hoTen ? ' · ' + escapeHtml(e.hoTen) : ''} · còn ${e.conLai}h</option>`
     ).join('');
   }
 
@@ -304,6 +428,7 @@
 
     return {
       deviceId: state.deviceId,
+      deviceToken: state.deviceToken,
       ngay: document.getElementById('ngay').value,
       maCongViec: document.getElementById('maCongViec').value,
       hangMucMoi: document.getElementById('hangMucMoi').value,
@@ -331,12 +456,337 @@
         document.getElementById('noiDungCongViec').value = '';
         document.getElementById('hangMucMoi').value = '';
         reloadEmployees();
+        if (state.context && state.context.isQL) loadManagerDashboard(true);
       })
       .withFailureHandler(err => setMessage(err.message, false))
       .apiSaveWorkEntry(payload);
   }
 
 
+
+  function loadPendingDevices() {
+    if (!state.context || !state.context.isQL) {
+      setDeviceApproveMessage('Chỉ QL được duyệt thiết bị.', false);
+      return;
+    }
+    setSectionCollapsed('deviceApproveBox', false);
+    setDeviceApproveMessage('Đang tải thiết bị chờ duyệt...', true);
+    google.script.run
+      .withSuccessHandler(res => {
+        if (!res.ok) {
+          setDeviceApproveMessage(res.reason || 'Không tải được danh sách thiết bị.', false);
+          return;
+        }
+        state.pendingDevices = res.devices || [];
+        renderPendingDevices();
+        setDeviceApproveMessage('Đã tải ' + state.pendingDevices.length + ' thiết bị chờ duyệt.', true);
+      })
+      .withFailureHandler(err => setDeviceApproveMessage(err.message, false))
+      .apiListPendingDevices(authPayload());
+  }
+
+  function setDeviceApproveMessage(text, ok) {
+    const el = document.getElementById('deviceApproveMessage');
+    if (!el) return;
+    el.textContent = text || '';
+    el.className = ok ? 'ok' : 'error';
+  }
+
+  function renderPendingDevices() {
+    const box = document.getElementById('pendingDeviceList');
+    if (!box) return;
+    if (!state.pendingDevices || !state.pendingDevices.length) {
+      box.innerHTML = '<p class="hint">Không có thiết bị nào đang chờ duyệt.</p>';
+      return;
+    }
+    box.innerHTML = state.pendingDevices.map((d, idx) => `
+      <div class="device-card">
+        <div class="entry-head">
+          <span>${escapeHtml(d.deviceId)}</span>
+          <span>CHỜ DUYỆT</span>
+        </div>
+        <div class="entry-meta">
+          <b>${escapeHtml(d.tenThietBi || '')}</b><br>
+          Số thẻ đăng ký: ${escapeHtml(d.soTheDangKy || '')}<br>
+          Ngày đăng ký: ${escapeHtml(d.ngayDangKy || '')}<br>
+          Cập nhật: ${escapeHtml(d.dangKyCuoi || '')}<br>
+          Ghi chú: ${escapeHtml(d.ghiChu || '')}
+        </div>
+        <label>Số thẻ gán thiết bị</label>
+        <input id="approveSoThe_${idx}" type="text" inputmode="numeric" value="${escapeHtml(d.soTheDangKy || '')}">
+        <button type="button" class="save" onclick="approveDevice(${idx})">Duyệt thiết bị</button>
+      </div>
+    `).join('');
+  }
+
+  function approveDevice(index) {
+    const d = state.pendingDevices[index];
+    if (!d) return;
+    const soThe = document.getElementById('approveSoThe_' + index).value;
+    if (!soThe.trim()) {
+      setDeviceApproveMessage('Vui lòng nhập số thẻ gán thiết bị.', false);
+      return;
+    }
+    if (!confirm('Duyệt thiết bị ' + d.deviceId + ' cho số thẻ ' + soThe + '?')) return;
+    setDeviceApproveMessage('Đang duyệt thiết bị...', true);
+    google.script.run
+      .withSuccessHandler(res => {
+        if (!res.ok) {
+          setDeviceApproveMessage(res.reason || 'Không duyệt được thiết bị.', false);
+          return;
+        }
+        setDeviceApproveMessage(res.reason || 'Đã duyệt thiết bị.', true);
+        loadPendingDevices();
+      })
+      .withFailureHandler(err => setDeviceApproveMessage(err.message, false))
+      .apiApproveDevice(authPayload({ targetDeviceId: d.deviceId, soTheDangKy: soThe }));
+  }
+
+
+
+
+
+  function buildLeaveEmployeeOptions() {
+    return '<option value="">-- Chọn nhân viên nghỉ --</option>' + (state.leaveEmployees || []).map(e =>
+      `<option value="${escapeHtml(e.soThe)}">${escapeHtml(e.soThe)}${e.hoTen ? ' · ' + escapeHtml(e.hoTen) : ''}</option>`
+    ).join('');
+  }
+
+  function loadEmployeeLeaveInfo() {
+    if (!state.context || !state.context.isQL) {
+      setLeaveMessage('Chỉ QL được xem/nhập nhân viên nghỉ.', false);
+      return;
+    }
+    const payload = {
+      deviceId: state.deviceId,
+      deviceToken: state.deviceToken,
+      ngay: document.getElementById('leaveDate').value
+    };
+    if (!payload.ngay) {
+      setLeaveMessage('Vui lòng chọn ngày nghỉ.', false);
+      return;
+    }
+
+    setSectionCollapsed('leaveBox', false);
+    setLeaveMessage('Đang tải danh sách nhân viên nghỉ...', true);
+    google.script.run
+      .withSuccessHandler(res => {
+        if (!res.ok) {
+          setLeaveMessage(res.reason || 'Không tải được nhân viên nghỉ.', false);
+          return;
+        }
+        state.leaveEmployees = res.employees || [];
+        state.employeeLeaves = res.leaves || [];
+        renderEmployeeLeaveInfo(res);
+        setLeaveMessage('Đã tải ' + state.employeeLeaves.length + ' nhân viên nghỉ ngày ' + res.ngay + '.', true);
+      })
+      .withFailureHandler(err => setLeaveMessage(err.message, false))
+      .apiGetEmployeeLeaveInfo(payload);
+  }
+
+  function renderEmployeeLeaveInfo(res) {
+    const select = document.getElementById('leaveSoThe');
+    const list = document.getElementById('leaveList');
+    if (select) select.innerHTML = buildLeaveEmployeeOptions();
+    if (!list) return;
+
+    if (!res && (!state.employeeLeaves || !state.employeeLeaves.length)) {
+      list.innerHTML = '<p class="hint">Bấm tải danh sách nghỉ để xem/nhập nhân viên nghỉ theo ngày.</p>';
+      return;
+    }
+
+    const leaves = state.employeeLeaves || [];
+    if (!leaves.length) {
+      list.innerHTML = '<p class="hint">Ngày này chưa có nhân viên nghỉ.</p>';
+      return;
+    }
+
+    list.innerHTML = leaves.map((r, idx) => `
+      <div class="leave-card-item">
+        <div class="entry-head">
+          <span>${escapeHtml(r.soThe)}${r.hoTen ? ' - ' + escapeHtml(r.hoTen) : ''}</span>
+          <span>NGHỈ</span>
+        </div>
+        <div class="entry-meta">
+          Ngày: ${escapeHtml(r.ngay || '')}<br>
+          Lý do: ${escapeHtml(r.lyDo || '')}<br>
+          Nhập bởi: ${escapeHtml(r.nguoiNhap || '')} · ${escapeHtml(r.thoiGianLuu || '')}
+        </div>
+        <button type="button" class="danger" onclick="cancelEmployeeLeave(${idx})">Hủy dòng nghỉ</button>
+      </div>
+    `).join('');
+  }
+
+  function saveEmployeeLeave() {
+    if (!state.context || !state.context.isQL) {
+      setLeaveMessage('Chỉ QL được nhập nhân viên nghỉ.', false);
+      return;
+    }
+    const payload = {
+      deviceId: state.deviceId,
+      deviceToken: state.deviceToken,
+      ngay: document.getElementById('leaveDate').value,
+      soThe: document.getElementById('leaveSoThe').value,
+      lyDo: document.getElementById('leaveReason').value
+    };
+    if (!payload.ngay) {
+      setLeaveMessage('Vui lòng chọn ngày nghỉ.', false);
+      return;
+    }
+    if (!payload.soThe) {
+      setLeaveMessage('Vui lòng chọn nhân viên nghỉ.', false);
+      return;
+    }
+    if (!payload.lyDo.trim()) {
+      setLeaveMessage('Vui lòng nhập lý do nghỉ.', false);
+      return;
+    }
+
+    setLeaveMessage('Đang lưu nhân viên nghỉ...', true);
+    google.script.run
+      .withSuccessHandler(res => {
+        if (!res.ok) {
+          setLeaveMessage(res.reason || 'Không lưu được nhân viên nghỉ.', false);
+          return;
+        }
+        state.leaveEmployees = res.employees || [];
+        state.employeeLeaves = res.leaves || [];
+        document.getElementById('leaveReason').value = '';
+        renderEmployeeLeaveInfo(res);
+        setLeaveMessage('Đã lưu nhân viên nghỉ ngày ' + res.ngay + '.', true);
+        if (document.getElementById('ngay').value === res.ngay) reloadEmployees();
+        if (state.context && state.context.isQL) loadManagerDashboard(true);
+      })
+      .withFailureHandler(err => setLeaveMessage(err.message, false))
+      .apiSaveEmployeeLeave(payload);
+  }
+
+  function cancelEmployeeLeave(index) {
+    const row = (state.employeeLeaves || [])[index];
+    if (!row) return;
+    const reason = prompt('Nhập lý do hủy dòng nghỉ của ' + row.soThe + ':');
+    if (!reason || !reason.trim()) {
+      setLeaveMessage('Vui lòng nhập lý do hủy dòng nghỉ.', false);
+      return;
+    }
+    setLeaveMessage('Đang hủy dòng nghỉ...', true);
+    google.script.run
+      .withSuccessHandler(res => {
+        if (!res.ok) {
+          setLeaveMessage(res.reason || 'Không hủy được dòng nghỉ.', false);
+          return;
+        }
+        state.leaveEmployees = res.employees || [];
+        state.employeeLeaves = res.leaves || [];
+        renderEmployeeLeaveInfo(res);
+        setLeaveMessage('Đã hủy dòng nghỉ.', true);
+        if (document.getElementById('ngay').value === res.ngay) reloadEmployees();
+        if (state.context && state.context.isQL) loadManagerDashboard(true);
+      })
+      .withFailureHandler(err => setLeaveMessage(err.message, false))
+      .apiCancelEmployeeLeave(authPayload({ leaveId: row.id, reason }));
+  }
+
+  function loadManagerDashboard(silent) {
+    if (!state.context || !state.context.isQL) return;
+
+    const payload = {
+      deviceId: state.deviceId,
+      deviceToken: state.deviceToken,
+      ngay: document.getElementById('dashboardDate').value || document.getElementById('ngay').value || todayText()
+    };
+    if (!payload.ngay) {
+      setDashboardMessage('Vui lòng chọn ngày tổng quan.', false);
+      return;
+    }
+
+    if (!silent) setSectionCollapsed('dashboardBox', false);
+    if (!silent) setDashboardMessage('Đang cập nhật tổng quan...', true);
+    renderManagerDashboard(null, silent);
+
+    const dashboardTimer = setTimeout(() => {
+      if (!silent) setDashboardMessage('Tải dashboard quá lâu. Kiểm tra Apps Script > Executions hoặc thử tải lại.', false);
+    }, 20000);
+
+    google.script.run
+      .withSuccessHandler(res => {
+        clearTimeout(dashboardTimer);
+        if (!res.ok) {
+          setDashboardMessage(res.reason || 'Không tải được dashboard.', false);
+          return;
+        }
+        state.dashboard = res.dashboard || null;
+        renderManagerDashboard(state.dashboard);
+        if (!silent) setDashboardMessage('Đã cập nhật tổng quan ngày ' + state.dashboard.ngay + '.', true);
+        else setDashboardMessage('', true);
+      })
+      .withFailureHandler(err => {
+        clearTimeout(dashboardTimer);
+        setDashboardMessage(err.message, false);
+      })
+      .apiGetManagerDashboard(payload);
+  }
+
+  function renderManagerDashboard(dashboard, silent) {
+    const box = document.getElementById('dashboardContent');
+    if (!box) return;
+    if (!dashboard) {
+      if (!silent) box.innerHTML = '<p class="hint">Đang chờ dữ liệu tổng quan. Bấm cập nhật để tải lại khi cần.</p>';
+      return;
+    }
+
+    const statusClass = dashboard.confirmed ? 'locked' : (dashboard.alertLevel === 'DANGER' ? 'danger' : (dashboard.alertLevel === 'WARN' ? 'warn-level' : 'ok-level'));
+    const statusText = dashboard.confirmed ? 'ĐÃ CHỐT' : 'ĐANG NHẬP';
+    const alerts = (dashboard.alerts || []).map(a => `<li>${escapeHtml(a)}</li>`).join('');
+    const confirmedText = dashboard.confirmed
+      ? `Xác nhận bởi ${escapeHtml(dashboard.xacNhanBoi || '')} · ${escapeHtml(dashboard.thoiGianXacNhan || '')}`
+      : (dashboard.thoiGianMoLai ? `Mở lại bởi ${escapeHtml(dashboard.moLaiBoi || '')} · ${escapeHtml(dashboard.thoiGianMoLai || '')}` : 'Ngày còn đang nhập');
+
+    box.innerHTML = `
+      <div class="dashboard-status ${statusClass}">
+        <div>
+          <b>Ngày ${escapeHtml(dashboard.ngay)}</b>
+          <span>${escapeHtml(confirmedText)}</span>
+        </div>
+        <strong>${statusText}</strong>
+      </div>
+
+      <div class="dashboard-grid">
+        <div class="dash-card"><span>Phiếu ACTIVE</span><b>${dashboard.activeEntries || 0}</b></div>
+        <div class="dash-card"><span>Phiếu đã hủy</span><b>${dashboard.deletedEntries || 0}</b></div>
+        <div class="dash-card"><span>Đã phân công</span><b>${dashboard.assignedEmployees || 0}</b></div>
+        <div class="dash-card"><span>Tổng giờ</span><b>${dashboard.totalHours || 0}h</b></div>
+        <div class="dash-card ok"><span>Đủ 8h</span><b>${dashboard.okEmployees || 0}</b></div>
+        <div class="dash-card warn-card"><span>Thiếu giờ</span><b>${dashboard.shortEmployees || 0}</b></div>
+        <div class="dash-card danger-card"><span>Vượt 8h</span><b>${dashboard.overEmployees || 0}</b></div>
+        <div class="dash-card leave-card"><span>Nghỉ</span><b>${dashboard.leaveEmployees || 0}</b></div>
+        <div class="dash-card"><span>Tổng NV</span><b>${dashboard.totalEmployees || 0}</b></div>
+      </div>
+
+      <div class="dashboard-alerts">
+        <b>Gợi ý kiểm tra</b>
+        <ul>${alerts}</ul>
+      </div>
+      <p class="dashboard-updated">Cập nhật: ${escapeHtml(dashboard.updatedAt || '')}</p>
+    `;
+  }
+
+  function goDashboardTarget(sectionId) {
+    const dashboardDate = document.getElementById('dashboardDate') ? document.getElementById('dashboardDate').value : '';
+    if (dashboardDate) {
+      if (sectionId === 'workSection' && document.getElementById('ngay')) document.getElementById('ngay').value = dashboardDate;
+      if (sectionId === 'leaveBox' && document.getElementById('leaveDate')) document.getElementById('leaveDate').value = dashboardDate;
+      if (sectionId === 'manageBox' && document.getElementById('manageDate')) document.getElementById('manageDate').value = dashboardDate;
+      if (sectionId === 'dailyBox' && document.getElementById('dailyDate')) document.getElementById('dailyDate').value = dashboardDate;
+      if (sectionId === 'reportBox') {
+        if (document.getElementById('reportFromDate')) document.getElementById('reportFromDate').value = dashboardDate;
+        if (document.getElementById('reportToDate')) document.getElementById('reportToDate').value = dashboardDate;
+      }
+    }
+    setSectionCollapsed(sectionId, false);
+    const el = document.getElementById(sectionId);
+    if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
 
   function loadDailyConfirmInfo() {
     if (!state.context || !state.context.isQL) {
@@ -346,6 +796,7 @@
 
     const payload = {
       deviceId: state.deviceId,
+      deviceToken: state.deviceToken,
       ngay: document.getElementById('dailyDate').value
     };
     if (!payload.ngay) {
@@ -407,7 +858,7 @@
       : (status.thoiGianMoLai ? `Mở lại bởi ${escapeHtml(status.moLaiBoi || '')} · ${escapeHtml(status.thoiGianMoLai || '')}` : 'Dữ liệu còn đang nhập');
 
     const employeeHtml = (summary.employees || []).map(e => {
-      const cls = e.statusCode === 'OK' ? 'ok-hours' : (e.statusCode === 'OVER' ? 'over-hours' : 'short-hours');
+      const cls = e.statusCode === 'OK' ? 'ok-hours' : (e.statusCode === 'OVER' ? 'over-hours' : (e.statusCode === 'LEAVE' ? 'leave-hours' : 'short-hours'));
       const detail = e.chiTiet ? escapeHtml(e.chiTiet) : 'Chưa có công việc trong ngày';
       return `
         <div class="daily-employee ${cls}">
@@ -435,6 +886,7 @@
         <span>Đủ 8h: <b>${counts.ok || 0}</b></span>
         <span>Chưa đủ: <b>${counts.short || 0}</b></span>
         <span>Vượt: <b>${counts.over || 0}</b></span>
+        <span>Nghỉ: <b>${counts.leave || 0}</b></span>
       </div>
       ${counts.over > 0 ? '<p class="error">Còn nhân viên vượt 8h. Phải sửa dữ liệu trước khi xác nhận/chốt ngày.</p>' : ''}
       ${confirmed ? '<p class="warn">Ngày đã xác nhận: hệ thống chặn lưu phiếu mới, sửa phiếu và hủy phiếu cho đến khi QL mở lại ngày.</p>' : ''}
@@ -450,6 +902,7 @@
 
     const payload = {
       deviceId: state.deviceId,
+      deviceToken: state.deviceToken,
       ngay: document.getElementById('dailyDate').value,
       ghiChu: document.getElementById('dailyNote').value
     };
@@ -470,6 +923,7 @@
         state.dailySummary = res.summary;
         renderDailySummary(res);
         setDailyMessage('Đã xác nhận/chốt ngày ' + res.summary.ngay + '.', true);
+        if (state.context && state.context.isQL) loadManagerDashboard(true);
       })
       .withFailureHandler(err => setDailyMessage(err.message, false))
       .apiConfirmDaily(payload);
@@ -483,6 +937,7 @@
 
     const payload = {
       deviceId: state.deviceId,
+      deviceToken: state.deviceToken,
       ngay: document.getElementById('dailyDate').value,
       reason: document.getElementById('dailyNote').value
     };
@@ -507,6 +962,7 @@
         state.dailySummary = res.summary;
         renderDailySummary(res);
         setDailyMessage('Đã mở lại ngày ' + res.summary.ngay + '.', true);
+        if (state.context && state.context.isQL) loadManagerDashboard(true);
       })
       .withFailureHandler(err => setDailyMessage(err.message, false))
       .apiReopenDaily(payload);
@@ -520,6 +976,7 @@
 
     const payload = {
       deviceId: state.deviceId,
+      deviceToken: state.deviceToken,
       fromDate: document.getElementById('reportFromDate').value,
       toDate: document.getElementById('reportToDate').value
     };
@@ -556,6 +1013,7 @@
 
     const payload = {
       deviceId: state.deviceId,
+      deviceToken: state.deviceToken,
       ngay: document.getElementById('manageDate').value
     };
     if (!payload.ngay) {
@@ -702,6 +1160,7 @@
       .withFailureHandler(err => setManageMessage(err.message, false))
       .apiGetWorkEntryDetail({
         deviceId: state.deviceId,
+        deviceToken: state.deviceToken,
         phieuId
       });
   }
@@ -754,6 +1213,7 @@
 
     const payload = {
       deviceId: state.deviceId,
+      deviceToken: state.deviceToken,
       phieuId: document.getElementById('editPhieuId').value,
       noiDungCongViec: document.getElementById('editNoiDungCongViec').value,
       reason: document.getElementById('editReason').value,
@@ -786,6 +1246,7 @@
         setEditMessage('Đã sửa phiếu: ' + res.phieuId + ' · ' + res.updatedNhanSu + ' nhân viên', true);
         reloadEmployees();
         loadWorkEntries();
+        if (state.context && state.context.isQL) loadManagerDashboard(true);
       })
       .withFailureHandler(err => setEditMessage(err.message, false))
       .apiUpdateWorkEntry(payload);
@@ -812,10 +1273,12 @@
         setManageMessage('Đã hủy phiếu: ' + res.phieuId, true);
         reloadEmployees();
         loadWorkEntries();
+        if (state.context && state.context.isQL) loadManagerDashboard(true);
       })
       .withFailureHandler(err => setManageMessage(err.message, false))
       .apiSoftDeleteWorkEntry({
         deviceId: state.deviceId,
+        deviceToken: state.deviceToken,
         phieuId,
         reason
       });
