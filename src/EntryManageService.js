@@ -1,6 +1,6 @@
 /**
  * VNPS Work Assign - EntryManageService
- * Version: V0.10_EMPLOYEE_LEAVE_FILTER
+ * Version: V0.11_EMPLOYEE_LEAVE_HOURS_QUOTA
  *
  * Phạm vi:
  * - Quản lý phiếu cho QL.
@@ -148,11 +148,13 @@ function getUsedHoursByDateExcludingPhieu_(ngay, excludePhieuId) {
 
 function getAvailableEmployeesForEdit_(ngay, phieuId) {
   const used = getUsedHoursByDateExcludingPhieu_(ngay, phieuId);
+  const leaveHours = getLeaveHoursMapByDate_(ngay);
   return listAssignableEmployeesByDate_(ngay)
     .map(e => {
       const daDung = used[e.soThe] || 0;
-      const conLai = Math.max(0, APP.MAX_HOURS_PER_DAY - daDung);
-      return Object.assign({}, e, { daDung, conLai });
+      const gioNghi = Number(leaveHours[e.soThe] || e.gioNghi || 0);
+      const conLai = Math.max(0, APP.MAX_HOURS_PER_DAY - daDung - gioNghi);
+      return Object.assign({}, e, { daDung, gioNghi, conLai });
     })
     .filter(e => e.conLai > 0);
 }
@@ -256,10 +258,12 @@ function updateWorkEntryDetail(payload) {
     validateEmployeesAssignableForDate_(ngayKey, Object.keys(batchAdd));
 
     const used = getUsedHoursByDateExcludingPhieu_(ngayKey, phieuId);
+    const leaveHours = getLeaveHoursMapByDate_(ngayKey);
     Object.keys(batchAdd).forEach(soThe => {
-      const total = (used[soThe] || 0) + batchAdd[soThe];
+      const nghi = Number(leaveHours[soThe] || 0);
+      const total = (used[soThe] || 0) + batchAdd[soThe] + nghi;
       if (total > APP.MAX_HOURS_PER_DAY) {
-        throw new Error('Số thẻ ' + soThe + ' vượt 8h/ngày sau khi sửa. Đã có ngoài phiếu này ' + (used[soThe] || 0) + 'h, phiếu sửa nhập ' + batchAdd[soThe] + 'h.');
+        throw new Error('Số thẻ ' + soThe + ' vượt 8h/ngày sau khi sửa. Đã có ngoài phiếu này ' + (used[soThe] || 0) + 'h làm, nghỉ ' + nghi + 'h, phiếu sửa nhập ' + batchAdd[soThe] + 'h.');
       }
     });
 

@@ -16,11 +16,13 @@ function getUsedHoursByDate_(ngay) {
 
 function getAvailableEmployees(ngay) {
   const used = getUsedHoursByDate_(ngay);
+  const leaveHours = getLeaveHoursMapByDate_(ngay);
   return listAssignableEmployeesByDate_(ngay)
     .map(e => {
       const daDung = used[e.soThe] || 0;
-      const conLai = Math.max(0, APP.MAX_HOURS_PER_DAY - daDung);
-      return Object.assign({}, e, { daDung, conLai });
+      const gioNghi = Number(leaveHours[e.soThe] || e.gioNghi || 0);
+      const conLai = Math.max(0, APP.MAX_HOURS_PER_DAY - daDung - gioNghi);
+      return Object.assign({}, e, { daDung, gioNghi, conLai });
     })
     .filter(e => e.conLai > 0);
 }
@@ -130,10 +132,12 @@ function saveWorkEntry(payload) {
 
     validateEmployeesAssignableForDate_(payload.ngay, Object.keys(batchAdd));
 
+    const leaveHours = getLeaveHoursMapByDate_(payload.ngay);
     Object.keys(batchAdd).forEach(soThe => {
-      const total = (used[soThe] || 0) + batchAdd[soThe];
+      const nghi = Number(leaveHours[soThe] || 0);
+      const total = (used[soThe] || 0) + batchAdd[soThe] + nghi;
       if (total > APP.MAX_HOURS_PER_DAY) {
-        throw new Error('Số thẻ ' + soThe + ' vượt 8h/ngày. Đã có ' + (used[soThe] || 0) + 'h, nhập thêm ' + batchAdd[soThe] + 'h.');
+        throw new Error('Số thẻ ' + soThe + ' vượt 8h/ngày. Đã có ' + (used[soThe] || 0) + 'h làm, nghỉ ' + nghi + 'h, nhập thêm ' + batchAdd[soThe] + 'h.');
       }
     });
 

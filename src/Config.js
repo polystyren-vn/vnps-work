@@ -1,10 +1,10 @@
 /**
  * VNPS Work Assign - Config
- * Version: V0.10_EMPLOYEE_LEAVE_FILTER
+ * Version: V0.11.1_EMPLOYEE_LEAVE_UI_FLOW_FIX
  */
 const APP = {
   NAME: 'VNPS_WORK_ASSIGN_APP',
-  VERSION: 'V0.10_EMPLOYEE_LEAVE_FILTER',
+  VERSION: 'V0.11.1_EMPLOYEE_LEAVE_UI_FLOW_FIX',
   TIMEZONE: 'Asia/Ho_Chi_Minh',
   MAX_HOURS_PER_DAY: 8,
   ADD_NEW_JOB_VALUE: '__ADD_NEW_JOB__',
@@ -40,7 +40,7 @@ const HEADERS = {
   DATA_CONG_VIEC: ['PhieuID','Ngay','MaCongViec','HangMuc','NoiDungCongViec','NguoiNhap','DeviceID','ThoiGianLuu','TrangThai','HuyBoi','ThoiGianHuy','LyDoHuy','SuaBoi','ThoiGianSua','LyDoSua'],
   DATA_NHAN_SU_CONG_VIEC: ['ID','PhieuID','Ngay','MaCongViec','SoThe','SoGio'],
   DATA_CHOT_NGAY: ['Ngay','TrangThai','XacNhanBoi','ThoiGianXacNhan','GhiChu','MoLaiBoi','ThoiGianMoLai','LyDoMoLai'],
-  DATA_NHAN_VIEN_NGHI: ['ID','Ngay','SoThe','HoTen','LyDo','TrangThai','NguoiNhap','DeviceID','ThoiGianLuu','HuyBoi','ThoiGianHuy','LyDoHuy'],
+  DATA_NHAN_VIEN_NGHI: ['ID','Ngay','SoThe','HoTen','SoGioNghi','LyDo','TrangThai','NguoiNhap','DeviceID','ThoiGianLuu','HuyBoi','ThoiGianHuy','LyDoHuy'],
   LOG_THAO_TAC: ['LogID','ThoiGian','DeviceID','SoThe','HanhDong','NoiDung'],
   REPORT_NHAN_VIEN_NGAY: ['Ngay','SoThe','HoTen','TongGio','ChiTietCongViec','TrangThaiGio'],
   REPORT_HANG_MUC_NGAY: ['STT','HangMuc']

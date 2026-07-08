@@ -1,6 +1,6 @@
 /**
  * VNPS Work Assign - DailyConfirmService
- * Version: V0.10_EMPLOYEE_LEAVE_FILTER
+ * Version: V0.11_EMPLOYEE_LEAVE_HOURS_QUOTA
  *
  * Phạm vi:
  * - Tạo sheet DATA_CHOT_NGAY tự động nếu chưa có.
@@ -107,8 +107,9 @@ function buildDailyEmployeeSummary_(ngay) {
   const key = dateKey_(ngay);
   if (!key) throw new Error('Ngày kiểm tra không hợp lệ.');
 
-  const activeEmployees = listActiveWorkEmployees_(); // V0.10: loại QL khỏi nhóm phân công công việc.
+  const activeEmployees = listActiveWorkEmployees_(); // Loại QL khỏi nhóm phân công công việc.
   const leaveMap = getActiveLeaveMapByDate_(key);
+  const leaveHoursMap = getLeaveHoursMapByDate_(key);
   const employeeMap = {};
   const group = {};
 
@@ -117,12 +118,14 @@ function buildDailyEmployeeSummary_(ngay) {
     if (!soThe) return;
     employeeMap[soThe] = e;
     const leaveRows = leaveMap[soThe] || [];
+    const gioNghi = Number(leaveHoursMap[soThe] || 0);
     group[soThe] = {
       soThe,
       hoTen: e.hoTen || '',
-      tongGio: 0,
-      chiTiet: leaveRows.length ? ['Nghỉ: ' + clientSafeText_(leaveRows[0].LyDo || 'Có đăng ký nghỉ')] : [],
-      isLeave: leaveRows.length > 0
+      gioLam: 0,
+      gioNghi,
+      chiTiet: leaveRows.length ? [getLeaveReasonTextForEmployee_(leaveRows)] : [],
+      isLeave: gioNghi > 0
     };
   });
 
@@ -139,37 +142,42 @@ function buildDailyEmployeeSummary_(ngay) {
     if (!soThe) return;
     if (!group[soThe]) {
       // Dữ liệu cũ có thể chứa nhân viên QL/đã khóa; vẫn hiển thị để QL phát hiện và sửa.
+      const leaveRows = leaveMap[soThe] || [];
+      const gioNghi = Number(leaveHoursMap[soThe] || 0);
       group[soThe] = {
         soThe,
         hoTen: employeeMap[soThe] ? employeeMap[soThe].hoTen : '',
-        tongGio: 0,
-        chiTiet: [],
-        isLeave: !!leaveMap[soThe]
+        gioLam: 0,
+        gioNghi,
+        chiTiet: leaveRows.length ? [getLeaveReasonTextForEmployee_(leaveRows)] : [],
+        isLeave: gioNghi > 0
       };
-      if (group[soThe].isLeave) group[soThe].chiTiet.push('Nghỉ: ' + clientSafeText_(leaveMap[soThe][0].LyDo || 'Có đăng ký nghỉ'));
     }
 
     const gio = Number(r.SoGio || 0);
     const hangMuc = clientSafeText_(phieu.HangMuc || r.MaCongViec || phieuId);
-    group[soThe].tongGio += gio;
+    group[soThe].gioLam += gio;
     group[soThe].chiTiet.push(hangMuc + ' ' + gio + 'h');
   });
 
   const rows = Object.keys(group).sort().map(soThe => {
     const item = group[soThe];
+    const gioLam = Number(item.gioLam || 0);
+    const gioNghi = Number(item.gioNghi || 0);
+    const tongGio = gioLam + gioNghi;
     let trangThaiGio = 'Chưa đủ';
     let statusCode = 'SHORT';
 
-    if (item.isLeave && Number(item.tongGio || 0) <= 0) {
-      trangThaiGio = 'Nghỉ';
-      statusCode = 'LEAVE';
-    } else if (item.isLeave && Number(item.tongGio || 0) > 0) {
-      trangThaiGio = 'Nghỉ nhưng có giờ';
-      statusCode = 'OVER';
-    } else if (Number(item.tongGio) === APP.MAX_HOURS_PER_DAY) {
-      trangThaiGio = 'Đủ 8h';
+    if (tongGio === APP.MAX_HOURS_PER_DAY) {
+      if (gioNghi >= APP.MAX_HOURS_PER_DAY && gioLam <= 0) {
+        trangThaiGio = 'Đủ 8h (nghỉ cả ngày)';
+      } else if (gioNghi > 0) {
+        trangThaiGio = 'Đủ 8h (gồm nghỉ ' + gioNghi + 'h)';
+      } else {
+        trangThaiGio = 'Đủ 8h';
+      }
       statusCode = 'OK';
-    } else if (Number(item.tongGio) > APP.MAX_HOURS_PER_DAY) {
+    } else if (tongGio > APP.MAX_HOURS_PER_DAY) {
       trangThaiGio = 'Vượt 8h';
       statusCode = 'OVER';
     }
@@ -177,8 +185,10 @@ function buildDailyEmployeeSummary_(ngay) {
     return {
       soThe: item.soThe,
       hoTen: item.hoTen || '',
-      tongGio: Number(item.tongGio || 0),
-      chiTiet: item.chiTiet.join('; '),
+      tongGio: Number(tongGio || 0),
+      gioLam,
+      gioNghi,
+      chiTiet: item.chiTiet.filter(Boolean).join('; '),
       trangThaiGio,
       statusCode,
       isLeave: !!item.isLeave
@@ -187,9 +197,9 @@ function buildDailyEmployeeSummary_(ngay) {
 
   const counts = { short: 0, ok: 0, over: 0, leave: 0, total: rows.length };
   rows.forEach(r => {
+    if (r.isLeave) counts.leave++;
     if (r.statusCode === 'OK') counts.ok++;
     else if (r.statusCode === 'OVER') counts.over++;
-    else if (r.statusCode === 'LEAVE') counts.leave++;
     else counts.short++;
   });
 

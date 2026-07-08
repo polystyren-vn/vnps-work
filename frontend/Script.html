@@ -16,7 +16,12 @@
     editEmployees: [],
     editingEntry: null,
     leaveEmployees: [],
-    employeeLeaves: []
+    employeeLeaves: [],
+    busyCount: 0,
+    busyStartedAt: 0,
+    busyTimer: null,
+    busyLabel: '',
+    busyDisabledButtons: []
   };
 
   function todayText() {
@@ -146,6 +151,63 @@
     el.className = ok ? 'ok' : 'error';
   }
 
+  function updateBusyOverlay() {
+    const overlay = document.getElementById('busyOverlay');
+    if (!overlay || !state.busyStartedAt) return;
+    const textEl = document.getElementById('busyText');
+    const secEl = document.getElementById('busySeconds');
+    const seconds = Math.max(0, Math.floor((Date.now() - state.busyStartedAt) / 1000));
+    if (textEl) textEl.textContent = state.busyLabel || 'Đang thực hiện...';
+    if (secEl) secEl.textContent = seconds + ' giây';
+  }
+
+  function beginBusy(label) {
+    state.busyCount = Number(state.busyCount || 0) + 1;
+    state.busyLabel = label || 'Đang thực hiện...';
+
+    if (state.busyCount === 1) {
+      state.busyStartedAt = Date.now();
+      state.busyDisabledButtons = Array.from(document.querySelectorAll('button')).map(btn => ({
+        btn,
+        disabled: btn.disabled
+      }));
+      state.busyDisabledButtons.forEach(item => {
+        if (!item.disabled) item.btn.disabled = true;
+      });
+
+      const overlay = document.getElementById('busyOverlay');
+      if (overlay) overlay.classList.remove('hidden');
+      document.body.classList.add('is-busy');
+      updateBusyOverlay();
+      state.busyTimer = setInterval(updateBusyOverlay, 1000);
+    } else {
+      updateBusyOverlay();
+    }
+
+    let closed = false;
+    return function endBusy() {
+      if (closed) return;
+      closed = true;
+      state.busyCount = Math.max(0, Number(state.busyCount || 0) - 1);
+      if (state.busyCount > 0) return;
+
+      if (state.busyTimer) clearInterval(state.busyTimer);
+      state.busyTimer = null;
+      state.busyStartedAt = 0;
+      state.busyLabel = '';
+
+      (state.busyDisabledButtons || []).forEach(item => {
+        if (item.btn && document.contains(item.btn)) item.btn.disabled = item.disabled;
+      });
+      state.busyDisabledButtons = [];
+
+      const overlay = document.getElementById('busyOverlay');
+      if (overlay) overlay.classList.add('hidden');
+      document.body.classList.remove('is-busy');
+    };
+  }
+
+
   function hideAllAreas() {
     ['blocked', 'registerArea', 'pendingArea', 'formArea'].forEach(id => {
       const el = document.getElementById(id);
@@ -184,8 +246,10 @@
     state.deviceId = auth.deviceId;
     state.deviceToken = auth.deviceToken;
 
+    const doneBusy = beginBusy('Đang kiểm tra thiết bị...');
     google.script.run
       .withSuccessHandler(res => {
+        doneBusy();
         if (!res.ok) {
           handleInitBlocked(res);
           return;
@@ -196,7 +260,10 @@
         state.employees = res.employees || [];
         renderForm();
       })
-      .withFailureHandler(err => showBlocked(err.message))
+      .withFailureHandler(err => {
+        doneBusy();
+        showBlocked(err.message);
+      })
       .apiInit(authPayload({ ngay: document.getElementById('ngay').value }));
   }
 
@@ -256,16 +323,21 @@
     }
 
     setRegisterMessage('Đang gửi đăng ký thiết bị...', 'ok');
+    const doneBusy = beginBusy('Đang gửi đăng ký thiết bị...');
 
     google.script.run
       .withSuccessHandler(res => {
+        doneBusy();
         if (!res.ok) {
           setRegisterMessage(res.reason || 'Không đăng ký được thiết bị.', 'error');
           return;
         }
         showPending(res.reason || 'Đã gửi đăng ký thiết bị. Vui lòng chờ duyệt.');
       })
-      .withFailureHandler(err => setRegisterMessage(err.message, 'error'))
+      .withFailureHandler(err => {
+        doneBusy();
+        setRegisterMessage(err.message, 'error');
+      })
       .apiRegisterDevice(payload);
   }
 
@@ -301,8 +373,11 @@
     const leaveBox = document.getElementById('leaveBox');
     if (leaveBox) {
       leaveBox.classList.toggle('hidden', !state.context.isQL);
-      document.getElementById('leaveDate').value = document.getElementById('ngay').value || todayText();
+      const leaveDateInput = document.getElementById('leaveDate');
+      leaveDateInput.value = document.getElementById('ngay').value || todayText();
+      leaveDateInput.onchange = () => loadEmployeeLeaveInfo(false);
       renderEmployeeLeaveInfo(null);
+      if (state.context.isQL) loadEmployeeLeaveInfo(true);
     }
 
     const reportBox = document.getElementById('reportBox');
@@ -352,12 +427,17 @@
     const leaveDate = document.getElementById('leaveDate');
     if (leaveDate && state.context && state.context.isQL) leaveDate.value = workDate;
     reloadEmployees();
-    if (state.context && state.context.isQL) loadManagerDashboard(true);
+    if (state.context && state.context.isQL) {
+      loadEmployeeLeaveInfo(true);
+      loadManagerDashboard(true);
+    }
   }
 
-  function reloadEmployees() {
+  function reloadEmployees(silent) {
+    const doneBusy = silent ? null : beginBusy('Đang tải danh sách nhân viên...');
     google.script.run
       .withSuccessHandler(res => {
+        if (doneBusy) doneBusy();
         if (!res.ok) {
           setMessage(res.reason, false);
           return;
@@ -366,13 +446,16 @@
         document.getElementById('employeeRows').innerHTML = '';
         addEmployeeRow();
       })
-      .withFailureHandler(err => setMessage(err.message, false))
+      .withFailureHandler(err => {
+        if (doneBusy) doneBusy();
+        setMessage(err.message, false);
+      })
       .apiGetAvailableEmployees(authPayload({ ngay: document.getElementById('ngay').value }));
   }
 
   function buildEmployeeOptions() {
     return '<option value="">-- Số thẻ --</option>' + state.employees.map(e =>
-      `<option value="${e.soThe}" data-conlai="${e.conLai}">${e.soThe}${e.hoTen ? ' · ' + escapeHtml(e.hoTen) : ''} · còn ${e.conLai}h</option>`
+      `<option value="${e.soThe}" data-conlai="${e.conLai}">${e.soThe}${e.hoTen ? ' · ' + escapeHtml(e.hoTen) : ''} · còn ${e.conLai}h${Number(e.gioNghi || 0) > 0 ? ' · nghỉ ' + e.gioNghi + 'h' : ''}</option>`
     ).join('');
   }
 
@@ -449,16 +532,21 @@
     }
 
     setMessage(`Đang lưu ${payload.nhanSu.length} nhân viên...`, true);
+    const doneBusy = beginBusy('Đang lưu công việc...');
 
     google.script.run
       .withSuccessHandler(res => {
+        doneBusy();
         setMessage(`Đã lưu: ${res.phieuId} · ${res.soDongNhanSu} nhân viên`, true);
         document.getElementById('noiDungCongViec').value = '';
         document.getElementById('hangMucMoi').value = '';
-        reloadEmployees();
+        reloadEmployees(true);
         if (state.context && state.context.isQL) loadManagerDashboard(true);
       })
-      .withFailureHandler(err => setMessage(err.message, false))
+      .withFailureHandler(err => {
+        doneBusy();
+        setMessage(err.message, false);
+      })
       .apiSaveWorkEntry(payload);
   }
 
@@ -471,8 +559,10 @@
     }
     setSectionCollapsed('deviceApproveBox', false);
     setDeviceApproveMessage('Đang tải thiết bị chờ duyệt...', true);
+    const doneBusy = beginBusy('Đang tải thiết bị chờ duyệt...');
     google.script.run
       .withSuccessHandler(res => {
+        doneBusy();
         if (!res.ok) {
           setDeviceApproveMessage(res.reason || 'Không tải được danh sách thiết bị.', false);
           return;
@@ -481,7 +571,10 @@
         renderPendingDevices();
         setDeviceApproveMessage('Đã tải ' + state.pendingDevices.length + ' thiết bị chờ duyệt.', true);
       })
-      .withFailureHandler(err => setDeviceApproveMessage(err.message, false))
+      .withFailureHandler(err => {
+        doneBusy();
+        setDeviceApproveMessage(err.message, false);
+      })
       .apiListPendingDevices(authPayload());
   }
 
@@ -496,7 +589,7 @@
     const box = document.getElementById('pendingDeviceList');
     if (!box) return;
     if (!state.pendingDevices || !state.pendingDevices.length) {
-      box.innerHTML = '<p class="hint">Không có thiết bị nào đang chờ duyệt.</p>';
+      box.innerHTML = '<p class="empty-note">Không có thiết bị nào đang chờ duyệt.</p>';
       return;
     }
     box.innerHTML = state.pendingDevices.map((d, idx) => `
@@ -529,8 +622,10 @@
     }
     if (!confirm('Duyệt thiết bị ' + d.deviceId + ' cho số thẻ ' + soThe + '?')) return;
     setDeviceApproveMessage('Đang duyệt thiết bị...', true);
+    const doneBusy = beginBusy('Đang duyệt thiết bị...');
     google.script.run
       .withSuccessHandler(res => {
+        doneBusy();
         if (!res.ok) {
           setDeviceApproveMessage(res.reason || 'Không duyệt được thiết bị.', false);
           return;
@@ -538,7 +633,10 @@
         setDeviceApproveMessage(res.reason || 'Đã duyệt thiết bị.', true);
         loadPendingDevices();
       })
-      .withFailureHandler(err => setDeviceApproveMessage(err.message, false))
+      .withFailureHandler(err => {
+        doneBusy();
+        setDeviceApproveMessage(err.message, false);
+      })
       .apiApproveDevice(authPayload({ targetDeviceId: d.deviceId, soTheDangKy: soThe }));
   }
 
@@ -552,9 +650,9 @@
     ).join('');
   }
 
-  function loadEmployeeLeaveInfo() {
+  function loadEmployeeLeaveInfo(silent) {
     if (!state.context || !state.context.isQL) {
-      setLeaveMessage('Chỉ QL được xem/nhập nhân viên nghỉ.', false);
+      if (!silent) setLeaveMessage('Chỉ QL được xem/nhập nhân viên nghỉ.', false);
       return;
     }
     const payload = {
@@ -563,24 +661,31 @@
       ngay: document.getElementById('leaveDate').value
     };
     if (!payload.ngay) {
-      setLeaveMessage('Vui lòng chọn ngày nghỉ.', false);
+      if (!silent) setLeaveMessage('Vui lòng chọn ngày nghỉ.', false);
       return;
     }
 
-    setSectionCollapsed('leaveBox', false);
-    setLeaveMessage('Đang tải danh sách nhân viên nghỉ...', true);
+    if (!silent) {
+      setSectionCollapsed('leaveBox', false);
+      setLeaveMessage('Đang tải danh sách nhân viên nghỉ...', true);
+    }
+    const doneBusy = silent ? null : beginBusy('Đang tải danh sách nhân viên nghỉ...');
     google.script.run
       .withSuccessHandler(res => {
+        if (doneBusy) doneBusy();
         if (!res.ok) {
-          setLeaveMessage(res.reason || 'Không tải được nhân viên nghỉ.', false);
+          if (!silent) setLeaveMessage(res.reason || 'Không tải được nhân viên nghỉ.', false);
           return;
         }
         state.leaveEmployees = res.employees || [];
         state.employeeLeaves = res.leaves || [];
         renderEmployeeLeaveInfo(res);
-        setLeaveMessage('Đã tải ' + state.employeeLeaves.length + ' nhân viên nghỉ ngày ' + res.ngay + '.', true);
+        if (!silent) setLeaveMessage('Đã tải ' + state.employeeLeaves.length + ' nhân viên nghỉ ngày ' + res.ngay + '.', true);
       })
-      .withFailureHandler(err => setLeaveMessage(err.message, false))
+      .withFailureHandler(err => {
+        if (doneBusy) doneBusy();
+        if (!silent) setLeaveMessage(err.message, false);
+      })
       .apiGetEmployeeLeaveInfo(payload);
   }
 
@@ -591,13 +696,13 @@
     if (!list) return;
 
     if (!res && (!state.employeeLeaves || !state.employeeLeaves.length)) {
-      list.innerHTML = '<p class="hint">Bấm tải danh sách nghỉ để xem/nhập nhân viên nghỉ theo ngày.</p>';
+      list.innerHTML = '<p class="empty-note">Danh sách nhân viên nghỉ sẽ tự tải theo ngày đã chọn.</p>';
       return;
     }
 
     const leaves = state.employeeLeaves || [];
     if (!leaves.length) {
-      list.innerHTML = '<p class="hint">Ngày này chưa có nhân viên nghỉ.</p>';
+      list.innerHTML = '<p class="empty-note">Ngày này chưa có nhân viên nghỉ.</p>';
       return;
     }
 
@@ -605,10 +710,11 @@
       <div class="leave-card-item">
         <div class="entry-head">
           <span>${escapeHtml(r.soThe)}${r.hoTen ? ' - ' + escapeHtml(r.hoTen) : ''}</span>
-          <span>NGHỈ</span>
+          <span>NGHỈ ${Number(r.soGioNghi || r.gioNghi || 8)}H</span>
         </div>
         <div class="entry-meta">
           Ngày: ${escapeHtml(r.ngay || '')}<br>
+          Số giờ nghỉ: ${Number(r.soGioNghi || r.gioNghi || 8)}h<br>
           Lý do: ${escapeHtml(r.lyDo || '')}<br>
           Nhập bởi: ${escapeHtml(r.nguoiNhap || '')} · ${escapeHtml(r.thoiGianLuu || '')}
         </div>
@@ -627,6 +733,7 @@
       deviceToken: state.deviceToken,
       ngay: document.getElementById('leaveDate').value,
       soThe: document.getElementById('leaveSoThe').value,
+      soGioNghi: Number(document.getElementById('leaveHours').value || 8),
       lyDo: document.getElementById('leaveReason').value
     };
     if (!payload.ngay) {
@@ -637,14 +744,20 @@
       setLeaveMessage('Vui lòng chọn nhân viên nghỉ.', false);
       return;
     }
+    if (!payload.soGioNghi || payload.soGioNghi < 1 || payload.soGioNghi > 8) {
+      setLeaveMessage('Vui lòng chọn số giờ nghỉ từ 1 đến 8.', false);
+      return;
+    }
     if (!payload.lyDo.trim()) {
       setLeaveMessage('Vui lòng nhập lý do nghỉ.', false);
       return;
     }
 
     setLeaveMessage('Đang lưu nhân viên nghỉ...', true);
+    const doneBusy = beginBusy('Đang lưu nhân viên nghỉ...');
     google.script.run
       .withSuccessHandler(res => {
+        doneBusy();
         if (!res.ok) {
           setLeaveMessage(res.reason || 'Không lưu được nhân viên nghỉ.', false);
           return;
@@ -652,12 +765,16 @@
         state.leaveEmployees = res.employees || [];
         state.employeeLeaves = res.leaves || [];
         document.getElementById('leaveReason').value = '';
+        document.getElementById('leaveHours').value = '8';
         renderEmployeeLeaveInfo(res);
         setLeaveMessage('Đã lưu nhân viên nghỉ ngày ' + res.ngay + '.', true);
-        if (document.getElementById('ngay').value === res.ngay) reloadEmployees();
+        if (document.getElementById('ngay').value === res.ngay) reloadEmployees(true);
         if (state.context && state.context.isQL) loadManagerDashboard(true);
       })
-      .withFailureHandler(err => setLeaveMessage(err.message, false))
+      .withFailureHandler(err => {
+        doneBusy();
+        setLeaveMessage(err.message, false);
+      })
       .apiSaveEmployeeLeave(payload);
   }
 
@@ -670,8 +787,10 @@
       return;
     }
     setLeaveMessage('Đang hủy dòng nghỉ...', true);
+    const doneBusy = beginBusy('Đang hủy dòng nghỉ...');
     google.script.run
       .withSuccessHandler(res => {
+        doneBusy();
         if (!res.ok) {
           setLeaveMessage(res.reason || 'Không hủy được dòng nghỉ.', false);
           return;
@@ -680,10 +799,13 @@
         state.employeeLeaves = res.leaves || [];
         renderEmployeeLeaveInfo(res);
         setLeaveMessage('Đã hủy dòng nghỉ.', true);
-        if (document.getElementById('ngay').value === res.ngay) reloadEmployees();
+        if (document.getElementById('ngay').value === res.ngay) reloadEmployees(true);
         if (state.context && state.context.isQL) loadManagerDashboard(true);
       })
-      .withFailureHandler(err => setLeaveMessage(err.message, false))
+      .withFailureHandler(err => {
+        doneBusy();
+        setLeaveMessage(err.message, false);
+      })
       .apiCancelEmployeeLeave(authPayload({ leaveId: row.id, reason }));
   }
 
@@ -703,6 +825,7 @@
     if (!silent) setSectionCollapsed('dashboardBox', false);
     if (!silent) setDashboardMessage('Đang cập nhật tổng quan...', true);
     renderManagerDashboard(null, silent);
+    const doneBusy = silent ? null : beginBusy('Đang cập nhật tổng quan...');
 
     const dashboardTimer = setTimeout(() => {
       if (!silent) setDashboardMessage('Tải dashboard quá lâu. Kiểm tra Apps Script > Executions hoặc thử tải lại.', false);
@@ -711,6 +834,7 @@
     google.script.run
       .withSuccessHandler(res => {
         clearTimeout(dashboardTimer);
+        if (doneBusy) doneBusy();
         if (!res.ok) {
           setDashboardMessage(res.reason || 'Không tải được dashboard.', false);
           return;
@@ -722,6 +846,7 @@
       })
       .withFailureHandler(err => {
         clearTimeout(dashboardTimer);
+        if (doneBusy) doneBusy();
         setDashboardMessage(err.message, false);
       })
       .apiGetManagerDashboard(payload);
@@ -731,7 +856,7 @@
     const box = document.getElementById('dashboardContent');
     if (!box) return;
     if (!dashboard) {
-      if (!silent) box.innerHTML = '<p class="hint">Đang chờ dữ liệu tổng quan. Bấm cập nhật để tải lại khi cần.</p>';
+      if (!silent) box.innerHTML = '<p class="empty-note">Đang chờ dữ liệu tổng quan. Bấm cập nhật để tải lại khi cần.</p>';
       return;
     }
 
@@ -784,6 +909,7 @@
       }
     }
     setSectionCollapsed(sectionId, false);
+    if (sectionId === 'leaveBox') loadEmployeeLeaveInfo(false);
     const el = document.getElementById(sectionId);
     if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
   }
@@ -807,6 +933,7 @@
     setSectionCollapsed('dailyBox', false);
     setDailyMessage('Đang kiểm tra tổng giờ trong ngày...', true);
     renderDailySummary(null);
+    const doneBusy = beginBusy('Đang kiểm tra tổng giờ trong ngày...');
 
     const dailyLoadTimer = setTimeout(() => {
       setDailyMessage('Kiểm tra ngày quá lâu. Kiểm tra Apps Script > Executions hoặc thử tải lại.', false);
@@ -815,6 +942,7 @@
     google.script.run
       .withSuccessHandler(res => {
         clearTimeout(dailyLoadTimer);
+        doneBusy();
         if (!res.ok) {
           setDailyMessage(res.reason || 'Không kiểm tra được ngày.', false);
           return;
@@ -826,6 +954,7 @@
       })
       .withFailureHandler(err => {
         clearTimeout(dailyLoadTimer);
+        doneBusy();
         setDailyMessage(err.message, false);
       })
       .apiGetDailyConfirmInfo(payload);
@@ -838,7 +967,7 @@
     const confirmBtn = document.getElementById('dailyConfirmBtn');
     const reopenBtn = document.getElementById('dailyReopenBtn');
     if (!res || !res.summary) {
-      box.innerHTML = '<p class="hint">Bấm kiểm tra để xem tổng giờ theo từng nhân viên trong ngày.</p>';
+      box.innerHTML = '<p class="empty-note">Bấm kiểm tra để xem tổng giờ theo từng nhân viên trong ngày.</p>';
       if (confirmBtn) confirmBtn.disabled = true;
       if (reopenBtn) reopenBtn.disabled = true;
       return;
@@ -858,7 +987,7 @@
       : (status.thoiGianMoLai ? `Mở lại bởi ${escapeHtml(status.moLaiBoi || '')} · ${escapeHtml(status.thoiGianMoLai || '')}` : 'Dữ liệu còn đang nhập');
 
     const employeeHtml = (summary.employees || []).map(e => {
-      const cls = e.statusCode === 'OK' ? 'ok-hours' : (e.statusCode === 'OVER' ? 'over-hours' : (e.statusCode === 'LEAVE' ? 'leave-hours' : 'short-hours'));
+      const cls = e.statusCode === 'OVER' ? 'over-hours' : (e.isLeave ? 'leave-hours' : (e.statusCode === 'OK' ? 'ok-hours' : 'short-hours'));
       const detail = e.chiTiet ? escapeHtml(e.chiTiet) : 'Chưa có công việc trong ngày';
       return `
         <div class="daily-employee ${cls}">
@@ -869,6 +998,7 @@
           <div class="daily-hours">
             <b>${Number(e.tongGio || 0)}h</b>
             <span>${escapeHtml(e.trangThaiGio)}</span>
+            ${Number(e.gioNghi || 0) > 0 ? '<small>Làm ' + Number(e.gioLam || 0) + 'h · Nghỉ ' + Number(e.gioNghi || 0) + 'h</small>' : ''}
           </div>
         </div>
       `;
@@ -890,7 +1020,7 @@
       </div>
       ${counts.over > 0 ? '<p class="error">Còn nhân viên vượt 8h. Phải sửa dữ liệu trước khi xác nhận/chốt ngày.</p>' : ''}
       ${confirmed ? '<p class="warn">Ngày đã xác nhận: hệ thống chặn lưu phiếu mới, sửa phiếu và hủy phiếu cho đến khi QL mở lại ngày.</p>' : ''}
-      <div class="daily-employee-list">${employeeHtml || '<p class="hint">Không có nhân viên để hiển thị.</p>'}</div>
+      <div class="daily-employee-list">${employeeHtml || '<p class="empty-note">Không có nhân viên để hiển thị.</p>'}</div>
     `;
   }
 
@@ -913,8 +1043,10 @@
     if (!confirm('Xác nhận/chốt ngày ' + payload.ngay + '? Sau khi chốt, hệ thống sẽ chặn lưu/sửa/hủy phiếu của ngày này.')) return;
 
     setDailyMessage('Đang xác nhận ngày...', true);
+    const doneBusy = beginBusy('Đang xác nhận/chốt ngày...');
     google.script.run
       .withSuccessHandler(res => {
+        doneBusy();
         if (!res.ok) {
           setDailyMessage(res.reason || 'Không xác nhận được ngày.', false);
           return;
@@ -925,7 +1057,10 @@
         setDailyMessage('Đã xác nhận/chốt ngày ' + res.summary.ngay + '.', true);
         if (state.context && state.context.isQL) loadManagerDashboard(true);
       })
-      .withFailureHandler(err => setDailyMessage(err.message, false))
+      .withFailureHandler(err => {
+        doneBusy();
+        setDailyMessage(err.message, false);
+      })
       .apiConfirmDaily(payload);
   }
 
@@ -952,8 +1087,10 @@
     if (!confirm('Mở lại ngày ' + payload.ngay + ' để cho phép sửa/lưu/hủy phiếu?')) return;
 
     setDailyMessage('Đang mở lại ngày...', true);
+    const doneBusy = beginBusy('Đang mở lại ngày...');
     google.script.run
       .withSuccessHandler(res => {
+        doneBusy();
         if (!res.ok) {
           setDailyMessage(res.reason || 'Không mở lại được ngày.', false);
           return;
@@ -964,7 +1101,10 @@
         setDailyMessage('Đã mở lại ngày ' + res.summary.ngay + '.', true);
         if (state.context && state.context.isQL) loadManagerDashboard(true);
       })
-      .withFailureHandler(err => setDailyMessage(err.message, false))
+      .withFailureHandler(err => {
+        doneBusy();
+        setDailyMessage(err.message, false);
+      })
       .apiReopenDaily(payload);
   }
 
@@ -988,9 +1128,11 @@
 
     setSectionCollapsed('reportBox', false);
     setReportMessage('Đang tạo báo cáo...', true);
+    const doneBusy = beginBusy('Đang tạo báo cáo...');
 
     google.script.run
       .withSuccessHandler(res => {
+        doneBusy();
         if (!res.ok) {
           setReportMessage(res.reason || 'Không tạo được báo cáo.', false);
           return;
@@ -1000,7 +1142,10 @@
           true
         );
       })
-      .withFailureHandler(err => setReportMessage(err.message, false))
+      .withFailureHandler(err => {
+        doneBusy();
+        setReportMessage(err.message, false);
+      })
       .apiGenerateReports(payload);
   }
 
@@ -1023,12 +1168,14 @@
 
     setSectionCollapsed('manageBox', false);
     setManageMessage('Đang tải danh sách phiếu...', true);
+    const doneBusy = beginBusy('Đang tải danh sách phiếu...');
     const manageLoadTimer = setTimeout(() => {
       setManageMessage('Tải danh sách phiếu quá lâu. Kiểm tra Apps Script > Executions hoặc thử tải lại.', false);
     }, 20000);
     google.script.run
       .withSuccessHandler(res => {
         clearTimeout(manageLoadTimer);
+        doneBusy();
         if (!res.ok) {
           setManageMessage(res.reason || 'Không tải được danh sách phiếu.', false);
           return;
@@ -1040,6 +1187,7 @@
       })
       .withFailureHandler(err => {
         clearTimeout(manageLoadTimer);
+        doneBusy();
         setManageMessage(err.message, false);
       })
       .apiListWorkEntries(payload);
@@ -1058,7 +1206,7 @@
     const box = document.getElementById('entryList');
     if (!box) return;
     if (!state.entries.length) {
-      box.innerHTML = '<p class="hint">Không có phiếu trong ngày đã chọn.</p>';
+      box.innerHTML = '<p class="empty-note">Không có phiếu trong ngày đã chọn.</p>';
       return;
     }
 
@@ -1099,7 +1247,7 @@
     }
     return '<option value="">-- Số thẻ --</option>' + list.map(e => {
       const sel = String(e.soThe) === selected ? ' selected' : '';
-      return `<option value="${escapeHtml(e.soThe)}" data-conlai="${e.conLai}"${sel}>${escapeHtml(e.soThe)} · còn ${e.conLai}h</option>`;
+      return `<option value="${escapeHtml(e.soThe)}" data-conlai="${e.conLai}"${sel}>${escapeHtml(e.soThe)} · còn ${e.conLai}h${Number(e.gioNghi || 0) > 0 ? ' · nghỉ ' + e.gioNghi + 'h' : ''}</option>`;
     }).join('');
   }
 
@@ -1145,9 +1293,11 @@
 
     setManageMessage('Đang tải chi tiết phiếu...', true);
     setEditMessage('', true);
+    const doneBusy = beginBusy('Đang tải chi tiết phiếu...');
 
     google.script.run
       .withSuccessHandler(res => {
+        doneBusy();
         if (!res.ok) {
           setManageMessage(res.reason || 'Không tải được chi tiết phiếu.', false);
           return;
@@ -1157,7 +1307,10 @@
         renderEntryEditForm(res.entry);
         setManageMessage('Đã tải chi tiết phiếu: ' + res.entry.phieuId, true);
       })
-      .withFailureHandler(err => setManageMessage(err.message, false))
+      .withFailureHandler(err => {
+        doneBusy();
+        setManageMessage(err.message, false);
+      })
       .apiGetWorkEntryDetail({
         deviceId: state.deviceId,
         deviceToken: state.deviceToken,
@@ -1237,18 +1390,23 @@
     if (!confirm('Xác nhận lưu sửa phiếu ' + payload.phieuId + '?')) return;
 
     setEditMessage('Đang lưu sửa phiếu...', true);
+    const doneBusy = beginBusy('Đang lưu sửa phiếu...');
     google.script.run
       .withSuccessHandler(res => {
+        doneBusy();
         if (!res.ok) {
           setEditMessage(res.reason || 'Không sửa được phiếu.', false);
           return;
         }
         setEditMessage('Đã sửa phiếu: ' + res.phieuId + ' · ' + res.updatedNhanSu + ' nhân viên', true);
-        reloadEmployees();
+        reloadEmployees(true);
         loadWorkEntries();
         if (state.context && state.context.isQL) loadManagerDashboard(true);
       })
-      .withFailureHandler(err => setEditMessage(err.message, false))
+      .withFailureHandler(err => {
+        doneBusy();
+        setEditMessage(err.message, false);
+      })
       .apiUpdateWorkEntry(payload);
   }
 
@@ -1264,18 +1422,23 @@
     }
 
     setManageMessage('Đang hủy phiếu...', true);
+    const doneBusy = beginBusy('Đang hủy phiếu...');
     google.script.run
       .withSuccessHandler(res => {
+        doneBusy();
         if (!res.ok) {
           setManageMessage(res.reason || 'Không hủy được phiếu.', false);
           return;
         }
         setManageMessage('Đã hủy phiếu: ' + res.phieuId, true);
-        reloadEmployees();
+        reloadEmployees(true);
         loadWorkEntries();
         if (state.context && state.context.isQL) loadManagerDashboard(true);
       })
-      .withFailureHandler(err => setManageMessage(err.message, false))
+      .withFailureHandler(err => {
+        doneBusy();
+        setManageMessage(err.message, false);
+      })
       .apiSoftDeleteWorkEntry({
         deviceId: state.deviceId,
         deviceToken: state.deviceToken,

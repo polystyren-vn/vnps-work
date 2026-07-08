@@ -1,6 +1,6 @@
 /**
  * VNPS Work Assign - ReportService
- * Version: V0.10_EMPLOYEE_LEAVE_FILTER
+ * Version: V0.11_EMPLOYEE_LEAVE_HOURS_QUOTA
  *
  * Phạm vi V0.3:
  * - Dựng REPORT_NHAN_VIEN_NGAY.
@@ -125,44 +125,48 @@ function buildEmployeeReportValues_(fromDate, toDate) {
   const phieuMap = makeWorkHeaderMap_();
   const group = {};
 
+  function ensureGroup_(ngay, soThe, hoTen) {
+    const key = ngay + '|' + soThe;
+    if (!group[key]) {
+      group[key] = {
+        ngay,
+        soThe,
+        hoTen: hoTen || (employees[soThe] ? employees[soThe].HoTen : ''),
+        tongGio: 0,
+        gioLam: 0,
+        gioNghi: 0,
+        details: []
+      };
+    }
+    if (!group[key].hoTen && hoTen) group[key].hoTen = hoTen;
+    return group[key];
+  }
+
   detailRows.forEach(r => {
     const ngay = dateKey_(r.Ngay);
     const soThe = String(r.SoThe || '').trim();
     if (!ngay || !soThe) return;
 
-    const key = ngay + '|' + soThe;
     const phieu = phieuMap[String(r.PhieuID || '').trim()] || {};
     const job = jobs[String(r.MaCongViec || '').trim()] || {};
     const hangMuc = phieu.HangMuc || job.HangMuc || String(r.MaCongViec || '').trim();
     const soGio = Number(r.SoGio || 0);
 
-    if (!group[key]) {
-      group[key] = {
-        ngay,
-        soThe,
-        hoTen: employees[soThe] ? employees[soThe].HoTen : '',
-        tongGio: 0,
-        details: []
-      };
-    }
-
-    group[key].tongGio += soGio;
-    group[key].details.push(hangMuc + ' ' + soGio + 'h');
+    const g = ensureGroup_(ngay, soThe, employees[soThe] ? employees[soThe].HoTen : '');
+    g.tongGio += soGio;
+    g.gioLam += soGio;
+    g.details.push(hangMuc + ' ' + soGio + 'h');
   });
 
   getEmployeeLeaveRowsInRange_(dateKeys).forEach(r => {
     const ngay = dateKey_(r.Ngay);
     const soThe = String(r.SoThe || '').trim();
     if (!ngay || !soThe) return;
-    const key = ngay + '|' + soThe + '|NGHI';
-    group[key] = {
-      ngay,
-      soThe,
-      hoTen: clientSafeText_(r.HoTen) || (employees[soThe] ? employees[soThe].HoTen : ''),
-      tongGio: 0,
-      details: ['NGHỈ: ' + clientSafeText_(r.LyDo || 'Có đăng ký nghỉ')],
-      forceStatus: 'NGHỈ'
-    };
+    const soGioNghi = getLeaveHoursFromRow_(r);
+    const g = ensureGroup_(ngay, soThe, clientSafeText_(r.HoTen) || (employees[soThe] ? employees[soThe].HoTen : ''));
+    g.tongGio += soGioNghi;
+    g.gioNghi += soGioNghi;
+    g.details.push('NGHỈ ' + soGioNghi + 'h: ' + clientSafeText_(r.LyDo || 'Có đăng ký nghỉ'));
   });
 
   const values = [['Ngay','SoThe','HoTen','TongGio','ChiTietCongViec','TrangThaiGio']];
@@ -170,9 +174,13 @@ function buildEmployeeReportValues_(fromDate, toDate) {
     .sort()
     .forEach(key => {
       const g = group[key];
-      let status = g.forceStatus || 'Chưa đủ';
-      if (!g.forceStatus && g.tongGio === APP.MAX_HOURS_PER_DAY) status = 'Đủ 8h';
-      if (!g.forceStatus && g.tongGio > APP.MAX_HOURS_PER_DAY) status = 'Vượt 8h';
+      let status = 'Chưa đủ';
+      if (g.tongGio === APP.MAX_HOURS_PER_DAY) {
+        if (g.gioNghi >= APP.MAX_HOURS_PER_DAY && g.gioLam <= 0) status = 'Đủ 8h (nghỉ cả ngày)';
+        else if (g.gioNghi > 0) status = 'Đủ 8h (gồm nghỉ ' + g.gioNghi + 'h)';
+        else status = 'Đủ 8h';
+      }
+      if (g.tongGio > APP.MAX_HOURS_PER_DAY) status = 'Vượt 8h';
       values.push([g.ngay, g.soThe, g.hoTen, g.tongGio, g.details.join('; '), status]);
     });
 
@@ -246,7 +254,10 @@ function buildJobDailyReportValues_(fromDate, toDate) {
   leaveRows.forEach(r => {
     const ngay = dateKey_(r.Ngay);
     if (!leaveByDate[ngay]) leaveByDate[ngay] = [];
-    const label = String(r.SoThe || '').trim() + (r.HoTen ? '-' + clientSafeText_(r.HoTen) : '') + (r.LyDo ? ' (' + clientSafeText_(r.LyDo) + ')' : '');
+    const label = String(r.SoThe || '').trim()
+      + (r.HoTen ? '-' + clientSafeText_(r.HoTen) : '')
+      + '-' + getLeaveHoursFromRow_(r) + 'h'
+      + (r.LyDo ? ' (' + clientSafeText_(r.LyDo) + ')' : '');
     leaveByDate[ngay].push(label);
   });
   const leaveReportRow = ['', 'Nhân viên nghỉ'];

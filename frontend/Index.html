@@ -68,8 +68,6 @@
           </button>
 
           <div class="section-body">
-            <p class="hint">Dashboard chỉ đọc dữ liệu tổng hợp. Không thay đổi logic lưu, sửa, hủy, báo cáo hoặc chốt ngày.</p>
-
             <label>Ngày tổng quan</label>
             <input id="dashboardDate" type="date">
 
@@ -98,7 +96,6 @@
           </button>
 
           <div class="section-body">
-            <p class="hint">Chỉ duyệt thiết bị khi đúng người phụ trách và đúng trình duyệt sử dụng thực tế. Link chia sẻ không tự đăng nhập được nếu thiếu mã bảo mật trình duyệt.</p>
             <button class="manage" type="button" onclick="loadPendingDevices()">Tải thiết bị chờ duyệt</button>
             <p id="deviceApproveMessage" class="message-line"></p>
             <div id="pendingDeviceList" class="device-list"></div>
@@ -144,22 +141,32 @@
           <button class="section-toggle" type="button" onclick="toggleSection('leaveBox')">
             <span>
               <span class="section-title">🏖️ Nhân viên nghỉ</span>
-              <span class="section-subtitle">QL nhập nhân viên nghỉ để loại khỏi danh sách phân công</span>
+              <span class="section-subtitle">QL nhập nhân viên nghỉ cả ngày hoặc nghỉ theo giờ</span>
             </span>
             <span class="section-state">Mở</span>
           </button>
 
           <div class="section-body">
-            <p class="hint">Nhân viên nghỉ trong ngày sẽ không xuất hiện trong dropdown nhập/sửa công việc. Nhân viên quyền QL cũng được loại khỏi danh sách phân công.</p>
-
             <label>Ngày nghỉ</label>
             <input id="leaveDate" type="date">
 
             <label>Nhân viên nghỉ</label>
             <select id="leaveSoThe"></select>
 
+            <label>Số giờ nghỉ</label>
+            <select id="leaveHours">
+              <option value="8">8h - Nghỉ cả ngày</option>
+              <option value="7">7h</option>
+              <option value="6">6h</option>
+              <option value="5">5h</option>
+              <option value="4">4h - Nửa ngày</option>
+              <option value="3">3h</option>
+              <option value="2">2h</option>
+              <option value="1">1h</option>
+            </select>
+
             <label>Lý do nghỉ</label>
-            <textarea id="leaveReason" rows="2" placeholder="Ví dụ: Nghỉ phép, nghỉ việc riêng, báo trước tuần sau nghỉ..."></textarea>
+            <textarea id="leaveReason" rows="2" placeholder="Ví dụ: Nghỉ phép 4h buổi chiều, nghỉ việc riêng cả ngày, báo trước tuần sau nghỉ..."></textarea>
 
             <div class="leave-actions">
               <button class="save" type="button" onclick="saveEmployeeLeave()">Lưu nhân viên nghỉ</button>
@@ -180,8 +187,6 @@
           </button>
 
           <div class="section-body">
-            <p class="hint">Hủy phiếu là <b>xóa mềm</b>: dữ liệu vẫn còn trên sheet nhưng báo cáo và tính giờ sẽ bỏ qua phiếu đã hủy.</p>
-
             <label>Ngày cần xem phiếu</label>
             <input id="manageDate" type="date">
 
@@ -191,8 +196,6 @@
 
             <div id="entryEditBox" class="entry-edit hidden">
               <h3>Sửa phiếu</h3>
-              <p class="hint">Chỉ sửa nội dung công việc, nhân viên và số giờ. Không sửa ngày/hạng mục trong V0.7.</p>
-
               <label>Mã phiếu</label>
               <input id="editPhieuId" type="text" readonly>
 
@@ -230,8 +233,6 @@
           </button>
 
           <div class="section-body">
-            <p class="hint">Khi ngày đã <b>xác nhận</b>, hệ thống sẽ chặn lưu phiếu mới, sửa phiếu và hủy phiếu. Nếu cần chỉnh dữ liệu, QL phải <b>mở lại ngày</b> và nhập lý do.</p>
-
             <label>Ngày cần kiểm tra/chốt</label>
             <input id="dailyDate" type="date">
 
@@ -260,8 +261,6 @@
           </button>
 
           <div class="section-body">
-            <p class="hint">Báo cáo sẽ ghi vào 2 sheet: <b>REPORT_NHAN_VIEN_NGAY</b> và <b>REPORT_HANG_MUC_NGAY</b>.</p>
-
             <label>Từ ngày</label>
             <input id="reportFromDate" type="date">
 
@@ -273,6 +272,16 @@
           </div>
         </section>
       </main>
+    </div>
+
+    <div id="busyOverlay" class="busy-overlay hidden" aria-live="polite" aria-busy="true">
+      <div class="busy-panel">
+        <div class="busy-spinner" aria-hidden="true"></div>
+        <div class="busy-copy">
+          <b id="busyText">Đang thực hiện...</b>
+          <span id="busySeconds">0 giây</span>
+        </div>
+      </div>
     </div>
 
     <script>
