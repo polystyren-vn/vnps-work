@@ -1,6 +1,6 @@
 <script>
+  // Version: V0.12.2_MOBILE_NAV_UI_POLISH
   const state = {
-    // V0.9: deviceId trên URL chỉ dùng để cảnh báo link cũ. Đăng nhập thực tế dùng DeviceID + DeviceToken lưu riêng trong trình duyệt.
     linkDeviceId: window.__DEVICE_ID__ || '',
     deviceId: '',
     deviceToken: '',
@@ -21,15 +21,16 @@
     busyStartedAt: 0,
     busyTimer: null,
     busyLabel: '',
-    busyDisabledButtons: []
+    busyDisabledButtons: [],
+    activeShellTab: ''
   };
+
+  const DEVICE_AUTH_KEY = 'VNPS_WORK_ASSIGN_DEVICE_AUTH_V1';
 
   function todayText() {
     const d = new Date();
     return d.toISOString().slice(0, 10);
   }
-
-  const DEVICE_AUTH_KEY = 'VNPS_WORK_ASSIGN_DEVICE_AUTH_V1';
 
   function randomPart(length) {
     const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
@@ -45,8 +46,7 @@
   }
 
   function createBrowserAuth() {
-    const d = new Date();
-    const datePart = d.toISOString().slice(0, 10).replace(/-/g, '');
+    const datePart = new Date().toISOString().slice(0, 10).replace(/-/g, '');
     return {
       deviceId: 'DEV_' + datePart + '_' + randomPart(8),
       deviceToken: randomPart(32),
@@ -86,70 +86,44 @@
   }
 
   function authPayload(extra) {
-    return Object.assign({
-      deviceId: state.deviceId,
-      deviceToken: state.deviceToken
-    }, extra || {});
+    return Object.assign({ deviceId: state.deviceId, deviceToken: state.deviceToken }, extra || {});
   }
 
-  function setMessage(text, ok) {
-    const el = document.getElementById('message');
+  function escapeHtml(text) {
+    return String(text || '')
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#039;');
+  }
+
+  function setTextMessage(id, text, ok) {
+    const el = document.getElementById(id);
+    if (!el) return;
     el.textContent = text || '';
     el.className = ok ? 'ok' : 'error';
   }
-
+  function setMessage(text, ok) { setTextMessage('message', text, ok); }
   function setRegisterMessage(text, type) {
     const el = document.getElementById('registerMessage');
+    if (!el) return;
     el.textContent = text || '';
     el.className = type || 'error';
   }
-
-  function setReportMessage(text, ok) {
-    const el = document.getElementById('reportMessage');
-    if (!el) return;
-    el.textContent = text || '';
-    el.className = ok ? 'ok' : 'error';
-  }
-
+  function setReportMessage(text, ok) { setTextMessage('reportMessage', text, ok); }
   function setDashboardMessage(text, ok) {
     const el = document.getElementById('dashboardMessage');
     if (!el) return;
-    if (!text) {
-      el.textContent = '';
-      el.className = 'message-line';
-      return;
-    }
+    if (!text) { el.textContent = ''; el.className = 'message-line'; return; }
     el.textContent = text;
     el.className = ok ? 'ok' : 'error';
   }
-
-  function setDailyMessage(text, ok) {
-    const el = document.getElementById('dailyMessage');
-    if (!el) return;
-    el.textContent = text || '';
-    el.className = ok ? 'ok' : 'error';
-  }
-
-  function setManageMessage(text, ok) {
-    const el = document.getElementById('manageMessage');
-    if (!el) return;
-    el.textContent = text || '';
-    el.className = ok ? 'ok' : 'error';
-  }
-
-  function setLeaveMessage(text, ok) {
-    const el = document.getElementById('leaveMessage');
-    if (!el) return;
-    el.textContent = text || '';
-    el.className = ok ? 'ok' : 'error';
-  }
-
-  function setEditMessage(text, ok) {
-    const el = document.getElementById('editMessage');
-    if (!el) return;
-    el.textContent = text || '';
-    el.className = ok ? 'ok' : 'error';
-  }
+  function setDailyMessage(text, ok) { setTextMessage('dailyMessage', text, ok); }
+  function setManageMessage(text, ok) { setTextMessage('manageMessage', text, ok); }
+  function setLeaveMessage(text, ok) { setTextMessage('leaveMessage', text, ok); }
+  function setEditMessage(text, ok) { setTextMessage('editMessage', text, ok); }
+  function setDeviceApproveMessage(text, ok) { setTextMessage('deviceApproveMessage', text, ok); }
 
   function updateBusyOverlay() {
     const overlay = document.getElementById('busyOverlay');
@@ -164,17 +138,10 @@
   function beginBusy(label) {
     state.busyCount = Number(state.busyCount || 0) + 1;
     state.busyLabel = label || 'Đang thực hiện...';
-
     if (state.busyCount === 1) {
       state.busyStartedAt = Date.now();
-      state.busyDisabledButtons = Array.from(document.querySelectorAll('button')).map(btn => ({
-        btn,
-        disabled: btn.disabled
-      }));
-      state.busyDisabledButtons.forEach(item => {
-        if (!item.disabled) item.btn.disabled = true;
-      });
-
+      state.busyDisabledButtons = Array.from(document.querySelectorAll('button')).map(btn => ({ btn, disabled: btn.disabled }));
+      state.busyDisabledButtons.forEach(item => { if (!item.disabled) item.btn.disabled = true; });
       const overlay = document.getElementById('busyOverlay');
       if (overlay) overlay.classList.remove('hidden');
       document.body.classList.add('is-busy');
@@ -183,30 +150,241 @@
     } else {
       updateBusyOverlay();
     }
-
     let closed = false;
     return function endBusy() {
       if (closed) return;
       closed = true;
       state.busyCount = Math.max(0, Number(state.busyCount || 0) - 1);
       if (state.busyCount > 0) return;
-
       if (state.busyTimer) clearInterval(state.busyTimer);
       state.busyTimer = null;
       state.busyStartedAt = 0;
       state.busyLabel = '';
-
       (state.busyDisabledButtons || []).forEach(item => {
         if (item.btn && document.contains(item.btn)) item.btn.disabled = item.disabled;
       });
       state.busyDisabledButtons = [];
-
       const overlay = document.getElementById('busyOverlay');
       if (overlay) overlay.classList.add('hidden');
       document.body.classList.remove('is-busy');
     };
   }
 
+  function hasPerm(name) {
+    return !!(state.context && state.context[name]);
+  }
+
+  function installDropdownTouchGuard() {
+    if (window.__VNPS_DROPDOWN_TOUCH_GUARD__) return;
+    window.__VNPS_DROPDOWN_TOUCH_GUARD__ = true;
+    ['touchstart', 'mousedown', 'click'].forEach(evtName => {
+      document.addEventListener(evtName, function(evt) {
+        const target = evt.target;
+        if (!target || !target.closest) return;
+        if (target.closest('select, input, textarea, option')) {
+          evt.stopPropagation();
+        }
+      }, true);
+    });
+  }
+
+
+  const MOBILE_SHELL_TABS = [
+    { id: 'dashboardBox', label: 'Tổng quan', icon: '📌', perm: 'canViewOverview' },
+    { id: 'workSection', label: 'Nhập', icon: '📝', perm: 'canManageWorkEntry' },
+    { id: 'leaveBox', label: 'Nghỉ', icon: '🏖️', perm: 'canManageLeave' },
+    { id: 'reportBox', label: 'Báo cáo', icon: '📊', perm: 'canReport' },
+    { id: 'manageBox', label: 'Phiếu', icon: '🗂️', perm: 'canManageWorkEntry' },
+    { id: 'dailyBox', label: 'Chốt', icon: '✅', perm: 'canConfirmDay' },
+    { id: 'deviceApproveBox', label: 'Thiết bị', icon: '🔐', perm: 'canManageDevice' }
+  ];
+
+  function shellTabsForCurrentUser() {
+    return MOBILE_SHELL_TABS.filter(tab => hasPerm(tab.perm));
+  }
+
+  function getDefaultShellTab() {
+    const tabs = shellTabsForCurrentUser();
+    if (!tabs.length) return '';
+    const overview = tabs.find(tab => tab.id === 'dashboardBox');
+    return (overview || tabs[0]).id;
+  }
+
+  function ensureMobileShellStyle() {
+    if (document.getElementById('mobileShellStyle')) return;
+    const style = document.createElement('style');
+    style.id = 'mobileShellStyle';
+    style.textContent = `
+      body.shell-mode .identity-card { margin-bottom: 8px; }
+      .mobile-nav-shell {
+        position: relative;
+        z-index: 1;
+        margin-top: 10px;
+        margin-bottom: 10px;
+        background: rgba(241, 245, 249, .96);
+        backdrop-filter: blur(8px);
+        border: 1px solid #cbd5e1;
+        border-radius: 14px;
+        padding: 8px;
+        box-shadow: 0 2px 10px rgba(15, 23, 42, .10);
+      }
+      .mobile-nav-shell-title {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 8px;
+        margin: 0 0 8px;
+        color: #334155;
+        font-size: 13px;
+        font-weight: 800;
+      }
+      .mobile-nav-shell-title b { color: #0f766e; }
+      .mobile-nav-tabs {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 7px;
+      }
+      .mobile-nav-tab {
+        min-height: 46px;
+        padding: 8px 6px;
+        border-radius: 11px;
+        background: #e2e8f0;
+        color: #334155;
+        font-size: 14px;
+        line-height: 1.15;
+        display: grid;
+        place-items: center;
+        gap: 2px;
+      }
+      .mobile-nav-tab .nav-icon { font-size: 16px; line-height: 1; }
+      .mobile-nav-tab.active {
+        background: #0f766e;
+        color: #fff;
+        box-shadow: 0 4px 12px rgba(15, 118, 110, .28);
+      }
+      .mobile-nav-tab.active::before {
+        content: '✓';
+        display: inline-grid;
+        place-items: center;
+        width: 17px;
+        height: 17px;
+        border-radius: 999px;
+        background: rgba(255,255,255,.22);
+        font-size: 12px;
+        font-weight: 900;
+        line-height: 1;
+      }
+      body.shell-mode .quick-actions { display: none !important; }
+      .leave-card-top {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto;
+        gap: 8px;
+        align-items: start;
+      }
+      .leave-card-title b,
+      .leave-card-title span { display: block; }
+      .leave-card-title span { color: #475569; font-size: 14px; margin-top: 2px; }
+      .leave-card-actions { display: flex; gap: 6px; }
+      .leave-card-actions button {
+        min-height: 36px;
+        padding: 8px 10px;
+        font-size: 13px;
+        border-radius: 10px;
+        white-space: nowrap;
+      }
+      .leave-card-actions .edit-leave { background: #2563eb; }
+      .leave-card-actions .danger { background: #dc2626; }
+      .daily-hours b.compact { font-size: 15px; line-height: 1.25; }
+      body.shell-mode select,
+      body.shell-mode input,
+      body.shell-mode textarea {
+        pointer-events: auto !important;
+        touch-action: auto !important;
+        position: relative;
+        z-index: 2;
+      }
+      body.shell-mode select {
+        -webkit-appearance: menulist !important;
+        appearance: auto !important;
+      }
+      body.shell-mode .section-body { overflow: visible; }
+      body.shell-mode .section-card.shell-hidden { display: none !important; }
+      body.shell-mode .section-card:not(.shell-hidden) { margin-top: 10px; }
+      body.shell-mode .section-card:not(.shell-hidden) .section-toggle { pointer-events: none; }
+      body.shell-mode .section-card:not(.shell-hidden) .section-state { display: none; }
+      body.shell-mode .section-card.collapsed:not(.shell-hidden) .section-body { display: block; }
+      body.shell-mode .section-card:not(.shell-hidden) .section-subtitle { display: none; }
+      @media (max-width: 520px) {
+        .mobile-nav-shell { margin-left: -1px; margin-right: -1px; }
+        .mobile-nav-tabs { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+        .mobile-nav-tab { font-size: 13px; padding: 7px 4px; }
+        .leave-card-top { grid-template-columns: 1fr; }
+        .leave-card-actions { justify-content: flex-end; }
+      }
+      @media (max-width: 360px) {
+        .mobile-nav-tabs { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      }
+    `;
+    document.head.appendChild(style);
+  }
+
+  function ensureMobileShellNav() {
+    const formArea = document.getElementById('formArea');
+    if (!formArea) return;
+    ensureMobileShellStyle();
+    let nav = document.getElementById('mobileNavShell');
+    if (!nav) {
+      nav = document.createElement('section');
+      nav.id = 'mobileNavShell';
+      nav.className = 'mobile-nav-shell';
+      const identity = formArea.querySelector('.identity-card');
+      if (identity && identity.parentNode) identity.parentNode.insertBefore(nav, identity.nextSibling);
+      else formArea.insertBefore(nav, formArea.firstChild);
+    }
+
+    const tabs = shellTabsForCurrentUser();
+    nav.innerHTML = `
+      <div class="mobile-nav-shell-title">
+        <span>Tab chức năng</span>
+      </div>
+      <div class="mobile-nav-tabs">
+        ${tabs.map(tab => `
+          <button type="button" class="mobile-nav-tab" data-tab="${tab.id}" onclick="setActiveShellTab('${tab.id}')">
+            <span class="nav-icon">${tab.icon}</span>
+            <span>${escapeHtml(tab.label)}</span>
+          </button>
+        `).join('')}
+      </div>`;
+    document.body.classList.add('shell-mode');
+  }
+
+  function setActiveShellTab(sectionId, options) {
+    const opts = options || {};
+    const tabs = shellTabsForCurrentUser();
+    const allowed = tabs.some(tab => tab.id === sectionId);
+    const nextId = allowed ? sectionId : getDefaultShellTab();
+    if (!nextId) return;
+    state.activeShellTab = nextId;
+
+    MOBILE_SHELL_TABS.forEach(tab => {
+      const el = document.getElementById(tab.id);
+      if (!el) return;
+      const canSee = hasPerm(tab.perm);
+      el.classList.toggle('hidden', !canSee);
+      el.classList.toggle('shell-hidden', !canSee || tab.id !== nextId);
+      if (canSee && tab.id === nextId) setSectionCollapsed(tab.id, false);
+    });
+
+    document.querySelectorAll('.mobile-nav-tab').forEach(btn => {
+      btn.classList.toggle('active', btn.getAttribute('data-tab') === nextId);
+    });
+
+    if (!opts.noAutoLoad) {
+      if (nextId === 'dashboardBox' && hasPerm('canViewOverview')) loadManagerDashboard(true);
+      if (nextId === 'leaveBox' && hasPerm('canManageLeave')) loadEmployeeLeaveInfo(true);
+      if (nextId === 'workSection' && hasPerm('canManageWorkEntry') && !state.employees.length) reloadEmployees(true);
+    }
+  }
 
   function hideAllAreas() {
     ['blocked', 'registerArea', 'pendingArea', 'formArea'].forEach(id => {
@@ -240,44 +418,29 @@
   }
 
   function init() {
+    installDropdownTouchGuard();
     document.getElementById('ngay').value = todayText();
-
     const auth = getOrCreateBrowserAuth();
     state.deviceId = auth.deviceId;
     state.deviceToken = auth.deviceToken;
-
     const doneBusy = beginBusy('Đang kiểm tra thiết bị...');
     google.script.run
       .withSuccessHandler(res => {
         doneBusy();
-        if (!res.ok) {
-          handleInitBlocked(res);
-          return;
-        }
+        if (!res.ok) { handleInitBlocked(res); return; }
         state.context = res.context;
         state.version = res.version || '';
         state.jobs = res.jobs || [];
         state.employees = res.employees || [];
         renderForm();
       })
-      .withFailureHandler(err => {
-        doneBusy();
-        showBlocked(err.message);
-      })
+      .withFailureHandler(err => { doneBusy(); showBlocked(err.message); })
       .apiInit(authPayload({ ngay: document.getElementById('ngay').value }));
   }
 
   function handleInitBlocked(res) {
-    if (res.canRegister || res.code === 'DEVICE_NOT_REGISTERED') {
-      showRegisterDevice(res.deviceId || state.deviceId, res.reason);
-      return;
-    }
-
-    if (res.code === 'DEVICE_PENDING') {
-      showPending(res.reason);
-      return;
-    }
-
+    if (res.canRegister || res.code === 'DEVICE_NOT_REGISTERED') { showRegisterDevice(res.deviceId || state.deviceId, res.reason); return; }
+    if (res.code === 'DEVICE_PENDING') { showPending(res.reason); return; }
     showBlocked(res.reason);
   }
 
@@ -312,33 +475,55 @@
       soTheDangKy: document.getElementById('regSoThe').value,
       ghiChu: document.getElementById('regGhiChu').value
     };
-
-    if (!payload.tenThietBi.trim()) {
-      setRegisterMessage('Vui lòng nhập tên thiết bị.', 'error');
-      return;
-    }
-    if (!payload.soTheDangKy.trim()) {
-      setRegisterMessage('Vui lòng nhập số thẻ đăng ký.', 'error');
-      return;
-    }
-
+    if (!payload.tenThietBi.trim()) { setRegisterMessage('Vui lòng nhập tên thiết bị.', 'error'); return; }
+    if (!payload.soTheDangKy.trim()) { setRegisterMessage('Vui lòng nhập số thẻ đăng ký.', 'error'); return; }
     setRegisterMessage('Đang gửi đăng ký thiết bị...', 'ok');
     const doneBusy = beginBusy('Đang gửi đăng ký thiết bị...');
-
     google.script.run
       .withSuccessHandler(res => {
         doneBusy();
-        if (!res.ok) {
-          setRegisterMessage(res.reason || 'Không đăng ký được thiết bị.', 'error');
-          return;
-        }
+        if (!res.ok) { setRegisterMessage(res.reason || 'Không đăng ký được thiết bị.', 'error'); return; }
         showPending(res.reason || 'Đã gửi đăng ký thiết bị. Vui lòng chờ duyệt.');
       })
-      .withFailureHandler(err => {
-        doneBusy();
-        setRegisterMessage(err.message, 'error');
-      })
+      .withFailureHandler(err => { doneBusy(); setRegisterMessage(err.message, 'error'); })
       .apiRegisterDevice(payload);
+  }
+
+
+  function normalizeUiLabelsV0122() {
+    const dashboardTitle = document.querySelector('#dashboardBox .section-title');
+    if (dashboardTitle) dashboardTitle.textContent = '📌 Tổng quan';
+  }
+
+  function normalizeLeaveHourOptions() {
+    const leaveHours = document.getElementById('leaveHours');
+    if (!leaveHours) return;
+    const current = String(leaveHours.value || '8');
+    leaveHours.innerHTML = '';
+    for (let i = 1; i <= 8; i++) {
+      const opt = document.createElement('option');
+      opt.value = String(i);
+      opt.textContent = i + 'h';
+      if (String(i) === current) opt.selected = true;
+      leaveHours.appendChild(opt);
+    }
+    if (!leaveHours.value) leaveHours.value = '8';
+  }
+
+  function compactDailyHourText(e) {
+    const gioLam = Number(e && e.gioLam || 0);
+    const gioNghi = Number(e && e.gioNghi || 0);
+    const tong = Number(e && e.tongGio || (gioLam + gioNghi) || 0);
+    const max = 8;
+    if (gioNghi > 0) {
+      let text = 'Làm ' + gioLam + 'h · Nghỉ ' + gioNghi + 'h';
+      if (tong < max) text += ' · Thiếu ' + (max - tong) + 'h';
+      if (tong > max) text += ' · Vượt ' + (tong - max) + 'h';
+      return text;
+    }
+    if (tong === max) return 'Đủ 8h';
+    if (tong < max) return 'Thiếu ' + (max - tong) + 'h';
+    return 'Vượt ' + (tong - max) + 'h';
   }
 
   function renderForm() {
@@ -349,56 +534,47 @@
     document.getElementById('userInfo').innerHTML = `
       <div class="identity-title">${escapeHtml(state.context.soThe)} - ${escapeHtml(state.context.hoTen)}</div>
       <div class="identity-grid">
+        <span class="identity-chip"><span class="chip-label">Mã NV</span><span class="chip-value">${escapeHtml(state.context.nhanVienID || '')}</span></span>
         <span class="identity-chip"><span class="chip-label">Thiết bị</span><span class="chip-value">${escapeHtml(state.context.deviceId)}</span></span>
         <span class="identity-chip"><span class="chip-label">Quyền</span><span class="chip-value">${escapeHtml(state.context.viTri)}</span></span>
-        <span class="identity-chip"><span class="chip-label">Trạng thái</span><span class="chip-value">Hoạt động</span></span>
         <span class="identity-chip"><span class="chip-label">Version</span><span class="chip-value">${escapeHtml(state.version || '')}</span></span>
-      </div>
-    `;
+      </div>`;
+
+    normalizeUiLabelsV0122();
+    normalizeLeaveHourOptions();
 
     const dashboardBox = document.getElementById('dashboardBox');
     if (dashboardBox) {
-      dashboardBox.classList.toggle('hidden', !state.context.isQL);
+      dashboardBox.classList.toggle('hidden', !hasPerm('canViewOverview'));
       document.getElementById('dashboardDate').value = document.getElementById('ngay').value || todayText();
       renderManagerDashboard(null);
-      if (state.context.isQL) loadManagerDashboard(true);
+      if (hasPerm('canViewOverview')) loadManagerDashboard(true);
     }
-
     const deviceApproveBox = document.getElementById('deviceApproveBox');
-    if (deviceApproveBox) {
-      deviceApproveBox.classList.toggle('hidden', !state.context.isQL);
-      renderPendingDevices();
-    }
-
+    if (deviceApproveBox) { deviceApproveBox.classList.toggle('hidden', !hasPerm('canManageDevice')); renderPendingDevices(); }
+    const workSection = document.getElementById('workSection');
+    if (workSection) workSection.classList.toggle('hidden', !hasPerm('canManageWorkEntry'));
     const leaveBox = document.getElementById('leaveBox');
     if (leaveBox) {
-      leaveBox.classList.toggle('hidden', !state.context.isQL);
+      leaveBox.classList.toggle('hidden', !hasPerm('canManageLeave'));
       const leaveDateInput = document.getElementById('leaveDate');
       leaveDateInput.value = document.getElementById('ngay').value || todayText();
       leaveDateInput.onchange = () => loadEmployeeLeaveInfo(false);
       renderEmployeeLeaveInfo(null);
-      if (state.context.isQL) loadEmployeeLeaveInfo(true);
+      if (hasPerm('canManageLeave')) loadEmployeeLeaveInfo(true);
     }
-
     const reportBox = document.getElementById('reportBox');
     if (reportBox) {
-      reportBox.classList.toggle('hidden', !state.context.isQL);
+      reportBox.classList.toggle('hidden', !hasPerm('canReport'));
       document.getElementById('reportFromDate').value = document.getElementById('ngay').value || todayText();
       document.getElementById('reportToDate').value = document.getElementById('ngay').value || todayText();
     }
-
     const manageBox = document.getElementById('manageBox');
-    if (manageBox) {
-      manageBox.classList.toggle('hidden', !state.context.isQL);
-      document.getElementById('manageDate').value = document.getElementById('ngay').value || todayText();
-    }
-
+    if (manageBox) { manageBox.classList.toggle('hidden', !hasPerm('canManageWorkEntry')); document.getElementById('manageDate').value = document.getElementById('ngay').value || todayText(); }
     const dailyBox = document.getElementById('dailyBox');
-    if (dailyBox) {
-      dailyBox.classList.toggle('hidden', !state.context.isQL);
-      document.getElementById('dailyDate').value = document.getElementById('ngay').value || todayText();
-      renderDailySummary(null);
-    }
+    if (dailyBox) { dailyBox.classList.toggle('hidden', !hasPerm('canConfirmDay')); document.getElementById('dailyDate').value = document.getElementById('ngay').value || todayText(); renderDailySummary(null); }
+
+    ensureMobileShellNav();
 
     const jobSelect = document.getElementById('maCongViec');
     jobSelect.innerHTML = '<option value="">-- Chọn hạng mục --</option>';
@@ -409,54 +585,54 @@
       jobSelect.appendChild(opt);
     });
     jobSelect.onchange = () => {
-      document.getElementById('newJobBox').classList.toggle(
-        'hidden',
-        jobSelect.value !== window.__ADD_NEW_JOB_VALUE__
-      );
+      document.getElementById('newJobBox').classList.toggle('hidden', jobSelect.value !== window.__ADD_NEW_JOB_VALUE__);
     };
 
+    applyQuickActionPermissions();
+    const defaultTab = state.activeShellTab || getDefaultShellTab();
+    setActiveShellTab(defaultTab, { noAutoLoad: true });
     document.getElementById('ngay').onchange = onWorkDateChange;
     document.getElementById('employeeRows').innerHTML = '';
-    addEmployeeRow();
+    if (hasPerm('canManageWorkEntry')) addEmployeeRow();
+  }
+
+  function applyQuickActionPermissions() {
+    // V0.12.2: đã có Tab chức năng phía trên, nên bỏ cụm nút điều hướng cũ trong Tổng quan.
+    document.querySelectorAll('.quick-actions').forEach(box => box.classList.add('hidden'));
   }
 
   function onWorkDateChange() {
     const workDate = document.getElementById('ngay').value || todayText();
     const dashboardDate = document.getElementById('dashboardDate');
-    if (dashboardDate && state.context && state.context.isQL) dashboardDate.value = workDate;
+    if (dashboardDate && hasPerm('canViewOverview')) dashboardDate.value = workDate;
     const leaveDate = document.getElementById('leaveDate');
-    if (leaveDate && state.context && state.context.isQL) leaveDate.value = workDate;
-    reloadEmployees();
-    if (state.context && state.context.isQL) {
-      loadEmployeeLeaveInfo(true);
-      loadManagerDashboard(true);
-    }
+    if (leaveDate && hasPerm('canManageLeave')) leaveDate.value = workDate;
+    if (hasPerm('canManageWorkEntry')) reloadEmployees(true);
+    if (hasPerm('canManageLeave')) loadEmployeeLeaveInfo(true);
+    if (hasPerm('canViewOverview')) loadManagerDashboard(true);
   }
 
   function reloadEmployees(silent) {
+    if (!hasPerm('canManageWorkEntry')) return;
     const doneBusy = silent ? null : beginBusy('Đang tải danh sách nhân viên...');
     google.script.run
       .withSuccessHandler(res => {
         if (doneBusy) doneBusy();
-        if (!res.ok) {
-          setMessage(res.reason, false);
-          return;
-        }
+        if (!res.ok) { setMessage(res.reason, false); return; }
         state.employees = res.employees || [];
         document.getElementById('employeeRows').innerHTML = '';
         addEmployeeRow();
       })
-      .withFailureHandler(err => {
-        if (doneBusy) doneBusy();
-        setMessage(err.message, false);
-      })
+      .withFailureHandler(err => { if (doneBusy) doneBusy(); setMessage(err.message, false); })
       .apiGetAvailableEmployees(authPayload({ ngay: document.getElementById('ngay').value }));
   }
 
+  function employeeOptionValue(e) { return e.nhanVienID || e.soThe || ''; }
   function buildEmployeeOptions() {
-    return '<option value="">-- Số thẻ --</option>' + state.employees.map(e =>
-      `<option value="${e.soThe}" data-conlai="${e.conLai}">${e.soThe}${e.hoTen ? ' · ' + escapeHtml(e.hoTen) : ''} · còn ${e.conLai}h${Number(e.gioNghi || 0) > 0 ? ' · nghỉ ' + e.gioNghi + 'h' : ''}</option>`
-    ).join('');
+    return '<option value="">-- Số thẻ --</option>' + state.employees.map(e => {
+      const value = escapeHtml(employeeOptionValue(e));
+      return `<option value="${value}" data-nhanvienid="${escapeHtml(e.nhanVienID || '')}" data-sothe="${escapeHtml(e.soThe || '')}" data-conlai="${e.conLai}">${escapeHtml(e.soThe)}${e.hoTen ? ' · ' + escapeHtml(e.hoTen) : ''} · còn ${e.conLai}h${Number(e.gioNghi || 0) > 0 ? ' · nghỉ ' + e.gioNghi + 'h' : ''}</option>`;
+    }).join('');
   }
 
   function buildHourOptions(max) {
@@ -470,11 +646,7 @@
     const wrap = document.getElementById('employeeRows');
     const row = document.createElement('div');
     row.className = 'emp-row';
-    row.innerHTML = `
-      <select class="emp" name="soThe">${buildEmployeeOptions()}</select>
-      <select class="hours" name="soGio">${buildHourOptions(8)}</select>
-      <button type="button">×</button>
-    `;
+    row.innerHTML = `<select class="emp" name="soThe">${buildEmployeeOptions()}</select><select class="hours" name="soGio">${buildHourOptions(8)}</select><button type="button">×</button>`;
     const emp = row.querySelector('.emp');
     const hours = row.querySelector('.hours');
     emp.onchange = () => {
@@ -490,25 +662,20 @@
     const rows = Array.from(document.querySelectorAll('#employeeRows .emp-row'));
     const nhanSu = [];
     const seen = {};
-
     rows.forEach(row => {
-      const soThe = row.querySelector('select[name="soThe"]').value;
+      const sel = row.querySelector('select[name="soThe"]');
+      const opt = sel.options[sel.selectedIndex];
+      const nhanVienID = opt ? (opt.dataset.nhanvienid || '') : '';
+      const soThe = opt ? (opt.dataset.sothe || '') : '';
+      const key = nhanVienID || soThe || sel.value;
       const soGio = Number(row.querySelector('select[name="soGio"]').value);
-      if (!soThe && !soGio) return;
-      if (!soThe || !soGio) {
-        throw new Error('Có dòng nhân viên chưa chọn đủ số thẻ và số giờ.');
-      }
-      if (seen[soThe]) {
-        throw new Error(`Số thẻ ${soThe} bị chọn trùng trong cùng phiếu. Hãy gộp giờ vào một dòng.`);
-      }
-      seen[soThe] = true;
-      nhanSu.push({ soThe, soGio });
+      if (!key && !soGio) return;
+      if (!key || !soGio) throw new Error('Có dòng nhân viên chưa chọn đủ số thẻ và số giờ.');
+      if (seen[key]) throw new Error(`Nhân viên ${soThe || key} bị chọn trùng trong cùng phiếu. Hãy gộp giờ vào một dòng.`);
+      seen[key] = true;
+      nhanSu.push({ nhanVienID, soThe, soGio });
     });
-
-    if (!nhanSu.length) {
-      throw new Error('Chưa chọn nhân viên tham gia.');
-    }
-
+    if (!nhanSu.length) throw new Error('Chưa chọn nhân viên tham gia.');
     return {
       deviceId: state.deviceId,
       deviceToken: state.deviceToken,
@@ -517,23 +684,16 @@
       hangMucMoi: document.getElementById('hangMucMoi').value,
       noiDungCongViec: document.getElementById('noiDungCongViec').value,
       nhanSu,
-      // V0.1.1/V0.2: gửi thêm JSON dự phòng để backend luôn nhận đủ nhiều nhân viên.
       nhanSuJson: JSON.stringify(nhanSu)
     };
   }
 
   function saveForm() {
+    if (!hasPerm('canManageWorkEntry')) { setMessage('Chỉ QL được nhập công việc.', false); return; }
     let payload;
-    try {
-      payload = collectPayload();
-    } catch (err) {
-      setMessage(err.message, false);
-      return;
-    }
-
+    try { payload = collectPayload(); } catch (err) { setMessage(err.message, false); return; }
     setMessage(`Đang lưu ${payload.nhanSu.length} nhân viên...`, true);
     const doneBusy = beginBusy('Đang lưu công việc...');
-
     google.script.run
       .withSuccessHandler(res => {
         doneBusy();
@@ -541,341 +701,246 @@
         document.getElementById('noiDungCongViec').value = '';
         document.getElementById('hangMucMoi').value = '';
         reloadEmployees(true);
-        if (state.context && state.context.isQL) loadManagerDashboard(true);
+        if (hasPerm('canViewOverview')) loadManagerDashboard(true);
       })
-      .withFailureHandler(err => {
-        doneBusy();
-        setMessage(err.message, false);
-      })
+      .withFailureHandler(err => { doneBusy(); setMessage(err.message, false); })
       .apiSaveWorkEntry(payload);
   }
 
-
-
   function loadPendingDevices() {
-    if (!state.context || !state.context.isQL) {
-      setDeviceApproveMessage('Chỉ QL được duyệt thiết bị.', false);
-      return;
-    }
+    if (!hasPerm('canManageDevice')) { setDeviceApproveMessage('Chỉ QL được duyệt thiết bị.', false); return; }
     setSectionCollapsed('deviceApproveBox', false);
     setDeviceApproveMessage('Đang tải thiết bị chờ duyệt...', true);
     const doneBusy = beginBusy('Đang tải thiết bị chờ duyệt...');
     google.script.run
       .withSuccessHandler(res => {
         doneBusy();
-        if (!res.ok) {
-          setDeviceApproveMessage(res.reason || 'Không tải được danh sách thiết bị.', false);
-          return;
-        }
+        if (!res.ok) { setDeviceApproveMessage(res.reason || 'Không tải được danh sách thiết bị.', false); return; }
         state.pendingDevices = res.devices || [];
         renderPendingDevices();
         setDeviceApproveMessage('Đã tải ' + state.pendingDevices.length + ' thiết bị chờ duyệt.', true);
       })
-      .withFailureHandler(err => {
-        doneBusy();
-        setDeviceApproveMessage(err.message, false);
-      })
+      .withFailureHandler(err => { doneBusy(); setDeviceApproveMessage(err.message, false); })
       .apiListPendingDevices(authPayload());
-  }
-
-  function setDeviceApproveMessage(text, ok) {
-    const el = document.getElementById('deviceApproveMessage');
-    if (!el) return;
-    el.textContent = text || '';
-    el.className = ok ? 'ok' : 'error';
   }
 
   function renderPendingDevices() {
     const box = document.getElementById('pendingDeviceList');
     if (!box) return;
-    if (!state.pendingDevices || !state.pendingDevices.length) {
-      box.innerHTML = '<p class="empty-note">Không có thiết bị nào đang chờ duyệt.</p>';
-      return;
-    }
+    if (!state.pendingDevices || !state.pendingDevices.length) { box.innerHTML = '<p class="empty-note">Không có thiết bị nào đang chờ duyệt.</p>'; return; }
     box.innerHTML = state.pendingDevices.map((d, idx) => `
       <div class="device-card">
-        <div class="entry-head">
-          <span>${escapeHtml(d.deviceId)}</span>
-          <span>CHỜ DUYỆT</span>
-        </div>
-        <div class="entry-meta">
-          <b>${escapeHtml(d.tenThietBi || '')}</b><br>
-          Số thẻ đăng ký: ${escapeHtml(d.soTheDangKy || '')}<br>
-          Ngày đăng ký: ${escapeHtml(d.ngayDangKy || '')}<br>
-          Cập nhật: ${escapeHtml(d.dangKyCuoi || '')}<br>
-          Ghi chú: ${escapeHtml(d.ghiChu || '')}
-        </div>
+        <div class="entry-head"><span>${escapeHtml(d.deviceId)}</span><span>CHỜ DUYỆT</span></div>
+        <div class="entry-meta"><b>${escapeHtml(d.tenThietBi || '')}</b><br>Mã NV: ${escapeHtml(d.nhanVienIDDangKy || '')}<br>Số thẻ đăng ký: ${escapeHtml(d.soTheDangKy || '')}<br>Họ tên: ${escapeHtml(d.hoTenDangKy || '')}<br>Ngày đăng ký: ${escapeHtml(d.ngayDangKy || '')}<br>Cập nhật: ${escapeHtml(d.dangKyCuoi || '')}<br>Ghi chú: ${escapeHtml(d.ghiChu || '')}</div>
         <label>Số thẻ gán thiết bị</label>
         <input id="approveSoThe_${idx}" type="text" inputmode="numeric" value="${escapeHtml(d.soTheDangKy || '')}">
         <button type="button" class="save" onclick="approveDevice(${idx})">Duyệt thiết bị</button>
-      </div>
-    `).join('');
+      </div>`).join('');
   }
 
   function approveDevice(index) {
     const d = state.pendingDevices[index];
     if (!d) return;
     const soThe = document.getElementById('approveSoThe_' + index).value;
-    if (!soThe.trim()) {
-      setDeviceApproveMessage('Vui lòng nhập số thẻ gán thiết bị.', false);
-      return;
-    }
+    if (!soThe.trim()) { setDeviceApproveMessage('Vui lòng nhập số thẻ gán thiết bị.', false); return; }
     if (!confirm('Duyệt thiết bị ' + d.deviceId + ' cho số thẻ ' + soThe + '?')) return;
     setDeviceApproveMessage('Đang duyệt thiết bị...', true);
     const doneBusy = beginBusy('Đang duyệt thiết bị...');
     google.script.run
       .withSuccessHandler(res => {
         doneBusy();
-        if (!res.ok) {
-          setDeviceApproveMessage(res.reason || 'Không duyệt được thiết bị.', false);
-          return;
-        }
+        if (!res.ok) { setDeviceApproveMessage(res.reason || 'Không duyệt được thiết bị.', false); return; }
         setDeviceApproveMessage(res.reason || 'Đã duyệt thiết bị.', true);
         loadPendingDevices();
       })
-      .withFailureHandler(err => {
-        doneBusy();
-        setDeviceApproveMessage(err.message, false);
-      })
+      .withFailureHandler(err => { doneBusy(); setDeviceApproveMessage(err.message, false); })
       .apiApproveDevice(authPayload({ targetDeviceId: d.deviceId, soTheDangKy: soThe }));
   }
 
-
-
-
-
   function buildLeaveEmployeeOptions() {
-    return '<option value="">-- Chọn nhân viên nghỉ --</option>' + (state.leaveEmployees || []).map(e =>
-      `<option value="${escapeHtml(e.soThe)}">${escapeHtml(e.soThe)}${e.hoTen ? ' · ' + escapeHtml(e.hoTen) : ''}</option>`
-    ).join('');
+    return '<option value="">-- Chọn nhân viên nghỉ --</option>' + (state.leaveEmployees || []).map(e => {
+      const value = escapeHtml(employeeOptionValue(e));
+      return `<option value="${value}" data-nhanvienid="${escapeHtml(e.nhanVienID || '')}" data-sothe="${escapeHtml(e.soThe || '')}">${escapeHtml(e.soThe)}${e.hoTen ? ' · ' + escapeHtml(e.hoTen) : ''}</option>`;
+    }).join('');
   }
 
   function loadEmployeeLeaveInfo(silent) {
-    if (!state.context || !state.context.isQL) {
-      if (!silent) setLeaveMessage('Chỉ QL được xem/nhập nhân viên nghỉ.', false);
-      return;
-    }
-    const payload = {
-      deviceId: state.deviceId,
-      deviceToken: state.deviceToken,
-      ngay: document.getElementById('leaveDate').value
-    };
-    if (!payload.ngay) {
-      if (!silent) setLeaveMessage('Vui lòng chọn ngày nghỉ.', false);
-      return;
-    }
-
-    if (!silent) {
-      setSectionCollapsed('leaveBox', false);
-      setLeaveMessage('Đang tải danh sách nhân viên nghỉ...', true);
-    }
+    if (!hasPerm('canManageLeave')) { if (!silent) setLeaveMessage('Chỉ QL/NS được xem/nhập nhân viên nghỉ.', false); return; }
+    const payload = authPayload({ ngay: document.getElementById('leaveDate').value });
+    if (!payload.ngay) { if (!silent) setLeaveMessage('Vui lòng chọn ngày nghỉ.', false); return; }
+    if (!silent) { setSectionCollapsed('leaveBox', false); setLeaveMessage('Đang tải danh sách nhân viên nghỉ...', true); }
     const doneBusy = silent ? null : beginBusy('Đang tải danh sách nhân viên nghỉ...');
     google.script.run
       .withSuccessHandler(res => {
         if (doneBusy) doneBusy();
-        if (!res.ok) {
-          if (!silent) setLeaveMessage(res.reason || 'Không tải được nhân viên nghỉ.', false);
-          return;
-        }
+        if (!res.ok) { if (!silent) setLeaveMessage(res.reason || 'Không tải được nhân viên nghỉ.', false); return; }
         state.leaveEmployees = res.employees || [];
         state.employeeLeaves = res.leaves || [];
         renderEmployeeLeaveInfo(res);
         if (!silent) setLeaveMessage('Đã tải ' + state.employeeLeaves.length + ' nhân viên nghỉ ngày ' + res.ngay + '.', true);
       })
-      .withFailureHandler(err => {
-        if (doneBusy) doneBusy();
-        if (!silent) setLeaveMessage(err.message, false);
-      })
+      .withFailureHandler(err => { if (doneBusy) doneBusy(); if (!silent) setLeaveMessage(err.message, false); })
       .apiGetEmployeeLeaveInfo(payload);
   }
 
   function renderEmployeeLeaveInfo(res) {
     const select = document.getElementById('leaveSoThe');
     const list = document.getElementById('leaveList');
+    normalizeLeaveHourOptions();
     if (select) select.innerHTML = buildLeaveEmployeeOptions();
     if (!list) return;
-
     if (!res && (!state.employeeLeaves || !state.employeeLeaves.length)) {
       list.innerHTML = '<p class="empty-note">Danh sách nhân viên nghỉ sẽ tự tải theo ngày đã chọn.</p>';
       return;
     }
-
     const leaves = state.employeeLeaves || [];
     if (!leaves.length) {
       list.innerHTML = '<p class="empty-note">Ngày này chưa có nhân viên nghỉ.</p>';
       return;
     }
-
-    list.innerHTML = leaves.map((r, idx) => `
+    list.innerHTML = leaves.map((r, idx) => {
+      const h = Number(r.soGioNghi || r.gioNghi || 8);
+      return `
       <div class="leave-card-item">
-        <div class="entry-head">
-          <span>${escapeHtml(r.soThe)}${r.hoTen ? ' - ' + escapeHtml(r.hoTen) : ''}</span>
-          <span>NGHỈ ${Number(r.soGioNghi || r.gioNghi || 8)}H</span>
+        <div class="leave-card-top">
+          <div class="leave-card-title">
+            <b>${escapeHtml(r.soThe)}${r.hoTen ? ' - ' + escapeHtml(r.hoTen) : ''}</b>
+            <span>${h}h · ${escapeHtml(r.lyDo || '')}</span>
+          </div>
+          <div class="leave-card-actions">
+            <button type="button" class="edit-leave" onclick="editEmployeeLeave(${idx})">Sửa</button>
+            <button type="button" class="danger" onclick="cancelEmployeeLeave(${idx})">Hủy</button>
+          </div>
         </div>
-        <div class="entry-meta">
-          Ngày: ${escapeHtml(r.ngay || '')}<br>
-          Số giờ nghỉ: ${Number(r.soGioNghi || r.gioNghi || 8)}h<br>
-          Lý do: ${escapeHtml(r.lyDo || '')}<br>
-          Nhập bởi: ${escapeHtml(r.nguoiNhap || '')} · ${escapeHtml(r.thoiGianLuu || '')}
-        </div>
-        <button type="button" class="danger" onclick="cancelEmployeeLeave(${idx})">Hủy dòng nghỉ</button>
-      </div>
-    `).join('');
+        <div class="entry-meta">Ngày: ${escapeHtml(r.ngay || '')}<br>Nhập bởi: ${escapeHtml(r.nguoiNhap || '')} · ${escapeHtml(r.thoiGianLuu || '')}</div>
+      </div>`;
+    }).join('');
   }
 
   function saveEmployeeLeave() {
-    if (!state.context || !state.context.isQL) {
-      setLeaveMessage('Chỉ QL được nhập nhân viên nghỉ.', false);
-      return;
-    }
-    const payload = {
-      deviceId: state.deviceId,
-      deviceToken: state.deviceToken,
+    if (!hasPerm('canManageLeave')) { setLeaveMessage('Chỉ QL/NS được nhập nhân viên nghỉ.', false); return; }
+    const sel = document.getElementById('leaveSoThe');
+    const opt = sel.options[sel.selectedIndex];
+    const payload = authPayload({
       ngay: document.getElementById('leaveDate').value,
-      soThe: document.getElementById('leaveSoThe').value,
+      nhanVienID: opt ? (opt.dataset.nhanvienid || '') : '',
+      soThe: opt ? (opt.dataset.sothe || '') : '',
       soGioNghi: Number(document.getElementById('leaveHours').value || 8),
       lyDo: document.getElementById('leaveReason').value
-    };
-    if (!payload.ngay) {
-      setLeaveMessage('Vui lòng chọn ngày nghỉ.', false);
-      return;
-    }
-    if (!payload.soThe) {
-      setLeaveMessage('Vui lòng chọn nhân viên nghỉ.', false);
-      return;
-    }
-    if (!payload.soGioNghi || payload.soGioNghi < 1 || payload.soGioNghi > 8) {
-      setLeaveMessage('Vui lòng chọn số giờ nghỉ từ 1 đến 8.', false);
-      return;
-    }
-    if (!payload.lyDo.trim()) {
-      setLeaveMessage('Vui lòng nhập lý do nghỉ.', false);
-      return;
-    }
-
+    });
+    if (!payload.ngay) { setLeaveMessage('Vui lòng chọn ngày nghỉ.', false); return; }
+    if (!payload.nhanVienID && !payload.soThe) { setLeaveMessage('Vui lòng chọn nhân viên nghỉ.', false); return; }
+    if (!payload.soGioNghi || payload.soGioNghi < 1 || payload.soGioNghi > 8) { setLeaveMessage('Vui lòng chọn số giờ nghỉ từ 1 đến 8.', false); return; }
+    if (!payload.lyDo.trim()) { setLeaveMessage('Vui lòng nhập lý do nghỉ.', false); return; }
     setLeaveMessage('Đang lưu nhân viên nghỉ...', true);
     const doneBusy = beginBusy('Đang lưu nhân viên nghỉ...');
     google.script.run
       .withSuccessHandler(res => {
         doneBusy();
-        if (!res.ok) {
-          setLeaveMessage(res.reason || 'Không lưu được nhân viên nghỉ.', false);
-          return;
-        }
+        if (!res.ok) { setLeaveMessage(res.reason || 'Không lưu được nhân viên nghỉ.', false); return; }
         state.leaveEmployees = res.employees || [];
         state.employeeLeaves = res.leaves || [];
         document.getElementById('leaveReason').value = '';
         document.getElementById('leaveHours').value = '8';
         renderEmployeeLeaveInfo(res);
         setLeaveMessage('Đã lưu nhân viên nghỉ ngày ' + res.ngay + '.', true);
-        if (document.getElementById('ngay').value === res.ngay) reloadEmployees(true);
-        if (state.context && state.context.isQL) loadManagerDashboard(true);
+        if (document.getElementById('ngay').value === res.ngay && hasPerm('canManageWorkEntry')) reloadEmployees(true);
+        if (hasPerm('canViewOverview')) loadManagerDashboard(true);
       })
-      .withFailureHandler(err => {
-        doneBusy();
-        setLeaveMessage(err.message, false);
-      })
+      .withFailureHandler(err => { doneBusy(); setLeaveMessage(err.message, false); })
       .apiSaveEmployeeLeave(payload);
+  }
+
+
+  function editEmployeeLeave(index) {
+    const row = (state.employeeLeaves || [])[index];
+    if (!row) return;
+    const oldHours = Number(row.soGioNghi || row.gioNghi || 8);
+    const hourText = prompt('Nhập số giờ nghỉ mới cho ' + row.soThe + ' (1-8h):', String(oldHours));
+    if (hourText === null) return;
+    const soGioNghi = Number(String(hourText).trim());
+    if (!soGioNghi || isNaN(soGioNghi) || soGioNghi < 1 || soGioNghi > 8) {
+      setLeaveMessage('Số giờ nghỉ phải từ 1 đến 8.', false);
+      return;
+    }
+    const lyDo = prompt('Nhập lý do/nội dung nghỉ:', row.lyDo || '');
+    if (lyDo === null) return;
+    if (!lyDo.trim()) {
+      setLeaveMessage('Vui lòng nhập lý do nghỉ.', false);
+      return;
+    }
+    setLeaveMessage('Đang sửa dòng nghỉ...', true);
+    const doneBusy = beginBusy('Đang sửa dòng nghỉ...');
+    google.script.run
+      .withSuccessHandler(res => {
+        doneBusy();
+        if (!res.ok) { setLeaveMessage(res.reason || 'Không sửa được dòng nghỉ.', false); return; }
+        state.leaveEmployees = res.employees || [];
+        state.employeeLeaves = res.leaves || [];
+        renderEmployeeLeaveInfo(res);
+        setLeaveMessage('Đã sửa dòng nghỉ.', true);
+        if (document.getElementById('ngay').value === res.ngay && hasPerm('canManageWorkEntry')) reloadEmployees(true);
+        if (hasPerm('canViewOverview')) loadManagerDashboard(true);
+      })
+      .withFailureHandler(err => { doneBusy(); setLeaveMessage(err.message, false); })
+      .apiUpdateEmployeeLeave(authPayload({ leaveId: row.id, soGioNghi, lyDo }));
   }
 
   function cancelEmployeeLeave(index) {
     const row = (state.employeeLeaves || [])[index];
     if (!row) return;
     const reason = prompt('Nhập lý do hủy dòng nghỉ của ' + row.soThe + ':');
-    if (!reason || !reason.trim()) {
-      setLeaveMessage('Vui lòng nhập lý do hủy dòng nghỉ.', false);
-      return;
-    }
+    if (!reason || !reason.trim()) { setLeaveMessage('Vui lòng nhập lý do hủy dòng nghỉ.', false); return; }
     setLeaveMessage('Đang hủy dòng nghỉ...', true);
     const doneBusy = beginBusy('Đang hủy dòng nghỉ...');
     google.script.run
       .withSuccessHandler(res => {
         doneBusy();
-        if (!res.ok) {
-          setLeaveMessage(res.reason || 'Không hủy được dòng nghỉ.', false);
-          return;
-        }
+        if (!res.ok) { setLeaveMessage(res.reason || 'Không hủy được dòng nghỉ.', false); return; }
         state.leaveEmployees = res.employees || [];
         state.employeeLeaves = res.leaves || [];
         renderEmployeeLeaveInfo(res);
         setLeaveMessage('Đã hủy dòng nghỉ.', true);
-        if (document.getElementById('ngay').value === res.ngay) reloadEmployees(true);
-        if (state.context && state.context.isQL) loadManagerDashboard(true);
+        if (document.getElementById('ngay').value === res.ngay && hasPerm('canManageWorkEntry')) reloadEmployees(true);
+        if (hasPerm('canViewOverview')) loadManagerDashboard(true);
       })
-      .withFailureHandler(err => {
-        doneBusy();
-        setLeaveMessage(err.message, false);
-      })
+      .withFailureHandler(err => { doneBusy(); setLeaveMessage(err.message, false); })
       .apiCancelEmployeeLeave(authPayload({ leaveId: row.id, reason }));
   }
 
   function loadManagerDashboard(silent) {
-    if (!state.context || !state.context.isQL) return;
-
-    const payload = {
-      deviceId: state.deviceId,
-      deviceToken: state.deviceToken,
-      ngay: document.getElementById('dashboardDate').value || document.getElementById('ngay').value || todayText()
-    };
-    if (!payload.ngay) {
-      setDashboardMessage('Vui lòng chọn ngày tổng quan.', false);
-      return;
-    }
-
+    if (!hasPerm('canViewOverview')) return;
+    const payload = authPayload({ ngay: document.getElementById('dashboardDate').value || document.getElementById('ngay').value || todayText() });
+    if (!payload.ngay) { setDashboardMessage('Vui lòng chọn ngày tổng quan.', false); return; }
     if (!silent) setSectionCollapsed('dashboardBox', false);
     if (!silent) setDashboardMessage('Đang cập nhật tổng quan...', true);
     renderManagerDashboard(null, silent);
     const doneBusy = silent ? null : beginBusy('Đang cập nhật tổng quan...');
-
-    const dashboardTimer = setTimeout(() => {
-      if (!silent) setDashboardMessage('Tải dashboard quá lâu. Kiểm tra Apps Script > Executions hoặc thử tải lại.', false);
-    }, 20000);
-
+    const dashboardTimer = setTimeout(() => { if (!silent) setDashboardMessage('Tải dashboard quá lâu. Kiểm tra Apps Script > Executions hoặc thử tải lại.', false); }, 20000);
     google.script.run
       .withSuccessHandler(res => {
         clearTimeout(dashboardTimer);
         if (doneBusy) doneBusy();
-        if (!res.ok) {
-          setDashboardMessage(res.reason || 'Không tải được dashboard.', false);
-          return;
-        }
+        if (!res.ok) { setDashboardMessage(res.reason || 'Không tải được dashboard.', false); return; }
         state.dashboard = res.dashboard || null;
         renderManagerDashboard(state.dashboard);
         if (!silent) setDashboardMessage('Đã cập nhật tổng quan ngày ' + state.dashboard.ngay + '.', true);
         else setDashboardMessage('', true);
       })
-      .withFailureHandler(err => {
-        clearTimeout(dashboardTimer);
-        if (doneBusy) doneBusy();
-        setDashboardMessage(err.message, false);
-      })
+      .withFailureHandler(err => { clearTimeout(dashboardTimer); if (doneBusy) doneBusy(); setDashboardMessage(err.message, false); })
       .apiGetManagerDashboard(payload);
   }
 
   function renderManagerDashboard(dashboard, silent) {
     const box = document.getElementById('dashboardContent');
     if (!box) return;
-    if (!dashboard) {
-      if (!silent) box.innerHTML = '<p class="empty-note">Đang chờ dữ liệu tổng quan. Bấm cập nhật để tải lại khi cần.</p>';
-      return;
-    }
-
+    if (!dashboard) { if (!silent) box.innerHTML = '<p class="empty-note">Đang chờ dữ liệu tổng quan. Bấm cập nhật để tải lại khi cần.</p>'; return; }
     const statusClass = dashboard.confirmed ? 'locked' : (dashboard.alertLevel === 'DANGER' ? 'danger' : (dashboard.alertLevel === 'WARN' ? 'warn-level' : 'ok-level'));
     const statusText = dashboard.confirmed ? 'ĐÃ CHỐT' : 'ĐANG NHẬP';
     const alerts = (dashboard.alerts || []).map(a => `<li>${escapeHtml(a)}</li>`).join('');
-    const confirmedText = dashboard.confirmed
-      ? `Xác nhận bởi ${escapeHtml(dashboard.xacNhanBoi || '')} · ${escapeHtml(dashboard.thoiGianXacNhan || '')}`
-      : (dashboard.thoiGianMoLai ? `Mở lại bởi ${escapeHtml(dashboard.moLaiBoi || '')} · ${escapeHtml(dashboard.thoiGianMoLai || '')}` : 'Ngày còn đang nhập');
-
+    const confirmedText = dashboard.confirmed ? `Xác nhận bởi ${escapeHtml(dashboard.xacNhanBoi || '')} · ${escapeHtml(dashboard.thoiGianXacNhan || '')}` : (dashboard.thoiGianMoLai ? `Mở lại bởi ${escapeHtml(dashboard.moLaiBoi || '')} · ${escapeHtml(dashboard.thoiGianMoLai || '')}` : 'Ngày còn đang nhập');
     box.innerHTML = `
-      <div class="dashboard-status ${statusClass}">
-        <div>
-          <b>Ngày ${escapeHtml(dashboard.ngay)}</b>
-          <span>${escapeHtml(confirmedText)}</span>
-        </div>
-        <strong>${statusText}</strong>
-      </div>
-
+      <div class="dashboard-status ${statusClass}"><div><b>Ngày ${escapeHtml(dashboard.ngay)}</b><span>${escapeHtml(confirmedText)}</span></div><strong>${statusText}</strong></div>
       <div class="dashboard-grid">
         <div class="dash-card"><span>Phiếu ACTIVE</span><b>${dashboard.activeEntries || 0}</b></div>
         <div class="dash-card"><span>Phiếu đã hủy</span><b>${dashboard.deletedEntries || 0}</b></div>
@@ -887,13 +952,8 @@
         <div class="dash-card leave-card"><span>Nghỉ</span><b>${dashboard.leaveEmployees || 0}</b></div>
         <div class="dash-card"><span>Tổng NV</span><b>${dashboard.totalEmployees || 0}</b></div>
       </div>
-
-      <div class="dashboard-alerts">
-        <b>Gợi ý kiểm tra</b>
-        <ul>${alerts}</ul>
-      </div>
-      <p class="dashboard-updated">Cập nhật: ${escapeHtml(dashboard.updatedAt || '')}</p>
-    `;
+      <div class="dashboard-alerts"><b>Gợi ý kiểm tra</b><ul>${alerts}</ul></div>
+      <p class="dashboard-updated">Cập nhật: ${escapeHtml(dashboard.updatedAt || '')}</p>`;
   }
 
   function goDashboardTarget(sectionId) {
@@ -908,62 +968,35 @@
         if (document.getElementById('reportToDate')) document.getElementById('reportToDate').value = dashboardDate;
       }
     }
-    setSectionCollapsed(sectionId, false);
-    if (sectionId === 'leaveBox') loadEmployeeLeaveInfo(false);
-    const el = document.getElementById(sectionId);
-    if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    setActiveShellTab(sectionId);
+    const nav = document.getElementById('mobileNavShell');
+    if (nav) nav.scrollIntoView({ behavior: 'smooth', block: 'start' });
   }
 
   function loadDailyConfirmInfo() {
-    if (!state.context || !state.context.isQL) {
-      setDailyMessage('Chỉ QL được kiểm tra/chốt ngày.', false);
-      return;
-    }
-
-    const payload = {
-      deviceId: state.deviceId,
-      deviceToken: state.deviceToken,
-      ngay: document.getElementById('dailyDate').value
-    };
-    if (!payload.ngay) {
-      setDailyMessage('Vui lòng chọn ngày cần kiểm tra.', false);
-      return;
-    }
-
+    if (!hasPerm('canConfirmDay')) { setDailyMessage('Chỉ QL được kiểm tra/chốt ngày.', false); return; }
+    const payload = authPayload({ ngay: document.getElementById('dailyDate').value });
+    if (!payload.ngay) { setDailyMessage('Vui lòng chọn ngày cần kiểm tra.', false); return; }
     setSectionCollapsed('dailyBox', false);
     setDailyMessage('Đang kiểm tra tổng giờ trong ngày...', true);
     renderDailySummary(null);
     const doneBusy = beginBusy('Đang kiểm tra tổng giờ trong ngày...');
-
-    const dailyLoadTimer = setTimeout(() => {
-      setDailyMessage('Kiểm tra ngày quá lâu. Kiểm tra Apps Script > Executions hoặc thử tải lại.', false);
-    }, 20000);
-
     google.script.run
       .withSuccessHandler(res => {
-        clearTimeout(dailyLoadTimer);
         doneBusy();
-        if (!res.ok) {
-          setDailyMessage(res.reason || 'Không kiểm tra được ngày.', false);
-          return;
-        }
+        if (!res.ok) { setDailyMessage(res.reason || 'Không kiểm tra được ngày.', false); return; }
         state.dailyStatus = res.status;
         state.dailySummary = res.summary;
         renderDailySummary(res);
         setDailyMessage('Đã kiểm tra ngày ' + res.summary.ngay + '.', true);
       })
-      .withFailureHandler(err => {
-        clearTimeout(dailyLoadTimer);
-        doneBusy();
-        setDailyMessage(err.message, false);
-      })
+      .withFailureHandler(err => { doneBusy(); setDailyMessage(err.message, false); })
       .apiGetDailyConfirmInfo(payload);
   }
 
   function renderDailySummary(res) {
     const box = document.getElementById('dailySummary');
     if (!box) return;
-
     const confirmBtn = document.getElementById('dailyConfirmBtn');
     const reopenBtn = document.getElementById('dailyReopenBtn');
     if (!res || !res.summary) {
@@ -972,350 +1005,132 @@
       if (reopenBtn) reopenBtn.disabled = true;
       return;
     }
-
     const status = res.status || {};
     const summary = res.summary || {};
     const counts = summary.counts || { short: 0, ok: 0, over: 0, total: 0 };
     const confirmed = status.trangThai === 'CONFIRMED';
-
     if (confirmBtn) confirmBtn.disabled = confirmed || counts.over > 0;
     if (reopenBtn) reopenBtn.disabled = !confirmed;
-
-    const statusClass = confirmed ? 'confirmed' : 'draft';
-    const statusExtra = confirmed
-      ? `Xác nhận bởi ${escapeHtml(status.xacNhanBoi || '')} · ${escapeHtml(status.thoiGianXacNhan || '')}`
-      : (status.thoiGianMoLai ? `Mở lại bởi ${escapeHtml(status.moLaiBoi || '')} · ${escapeHtml(status.thoiGianMoLai || '')}` : 'Dữ liệu còn đang nhập');
-
     const employeeHtml = (summary.employees || []).map(e => {
       const cls = e.statusCode === 'OVER' ? 'over-hours' : (e.isLeave ? 'leave-hours' : (e.statusCode === 'OK' ? 'ok-hours' : 'short-hours'));
       const detail = e.chiTiet ? escapeHtml(e.chiTiet) : 'Chưa có công việc trong ngày';
-      return `
-        <div class="daily-employee ${cls}">
-          <div>
-            <b>${escapeHtml(e.soThe)}${e.hoTen ? ' - ' + escapeHtml(e.hoTen) : ''}</b>
-            <div class="daily-detail">${detail}</div>
-          </div>
-          <div class="daily-hours">
-            <b>${Number(e.tongGio || 0)}h</b>
-            <span>${escapeHtml(e.trangThaiGio)}</span>
-            ${Number(e.gioNghi || 0) > 0 ? '<small>Làm ' + Number(e.gioLam || 0) + 'h · Nghỉ ' + Number(e.gioNghi || 0) + 'h</small>' : ''}
-          </div>
-        </div>
-      `;
+      return `<div class="daily-employee ${cls}"><div><b>${escapeHtml(e.soThe)}${e.hoTen ? ' - ' + escapeHtml(e.hoTen) : ''}</b><div class="daily-detail">${detail}</div></div><div class="daily-hours"><b class="compact">${escapeHtml(compactDailyHourText(e))}</b></div></div>`;
     }).join('');
-
     box.innerHTML = `
-      <div class="daily-status-card ${statusClass}">
-        <div><b>Trạng thái ngày ${escapeHtml(summary.ngay)}</b></div>
-        <div>${escapeHtml(status.trangThaiText || '')}</div>
-        <small>${statusExtra}</small>
-      </div>
-      <div class="daily-counts">
-        <span>Phiếu active: <b>${summary.activeEntries || 0}</b></span>
-        <span>Phiếu hủy: <b>${summary.deletedEntries || 0}</b></span>
-        <span>Đủ 8h: <b>${counts.ok || 0}</b></span>
-        <span>Chưa đủ: <b>${counts.short || 0}</b></span>
-        <span>Vượt: <b>${counts.over || 0}</b></span>
-        <span>Nghỉ: <b>${counts.leave || 0}</b></span>
-      </div>
+      <div class="daily-status-card ${confirmed ? 'confirmed' : 'draft'}"><div><b>Trạng thái ngày ${escapeHtml(summary.ngay)}</b></div><div>${escapeHtml(status.trangThaiText || '')}</div></div>
+      <div class="daily-counts"><span>Phiếu active: <b>${summary.activeEntries || 0}</b></span><span>Phiếu hủy: <b>${summary.deletedEntries || 0}</b></span><span>Đủ 8h: <b>${counts.ok || 0}</b></span><span>Chưa đủ: <b>${counts.short || 0}</b></span><span>Vượt: <b>${counts.over || 0}</b></span><span>Nghỉ: <b>${counts.leave || 0}</b></span></div>
       ${counts.over > 0 ? '<p class="error">Còn nhân viên vượt 8h. Phải sửa dữ liệu trước khi xác nhận/chốt ngày.</p>' : ''}
-      ${confirmed ? '<p class="warn">Ngày đã xác nhận: hệ thống chặn lưu phiếu mới, sửa phiếu và hủy phiếu cho đến khi QL mở lại ngày.</p>' : ''}
-      <div class="daily-employee-list">${employeeHtml || '<p class="empty-note">Không có nhân viên để hiển thị.</p>'}</div>
-    `;
+      ${confirmed ? '<p class="warn">Ngày đã xác nhận: hệ thống chặn lưu phiếu mới, sửa phiếu, hủy phiếu và thay đổi nghỉ cho đến khi QL mở lại ngày.</p>' : ''}
+      <div class="daily-employee-list">${employeeHtml || '<p class="empty-note">Không có nhân viên để hiển thị.</p>'}</div>`;
   }
 
   function confirmDaily() {
-    if (!state.context || !state.context.isQL) {
-      setDailyMessage('Chỉ QL được xác nhận ngày.', false);
-      return;
-    }
-
-    const payload = {
-      deviceId: state.deviceId,
-      deviceToken: state.deviceToken,
-      ngay: document.getElementById('dailyDate').value,
-      ghiChu: document.getElementById('dailyNote').value
-    };
-    if (!payload.ngay) {
-      setDailyMessage('Vui lòng chọn ngày cần xác nhận.', false);
-      return;
-    }
-    if (!confirm('Xác nhận/chốt ngày ' + payload.ngay + '? Sau khi chốt, hệ thống sẽ chặn lưu/sửa/hủy phiếu của ngày này.')) return;
-
+    if (!hasPerm('canConfirmDay')) { setDailyMessage('Chỉ QL được xác nhận ngày.', false); return; }
+    const payload = authPayload({ ngay: document.getElementById('dailyDate').value, ghiChu: document.getElementById('dailyNote').value });
+    if (!payload.ngay) { setDailyMessage('Vui lòng chọn ngày cần xác nhận.', false); return; }
+    if (!confirm('Xác nhận/chốt ngày ' + payload.ngay + '? Sau khi chốt, hệ thống sẽ chặn lưu/sửa/hủy phiếu và thay đổi nghỉ của ngày này.')) return;
     setDailyMessage('Đang xác nhận ngày...', true);
     const doneBusy = beginBusy('Đang xác nhận/chốt ngày...');
     google.script.run
-      .withSuccessHandler(res => {
-        doneBusy();
-        if (!res.ok) {
-          setDailyMessage(res.reason || 'Không xác nhận được ngày.', false);
-          return;
-        }
-        state.dailyStatus = res.status;
-        state.dailySummary = res.summary;
-        renderDailySummary(res);
-        setDailyMessage('Đã xác nhận/chốt ngày ' + res.summary.ngay + '.', true);
-        if (state.context && state.context.isQL) loadManagerDashboard(true);
-      })
-      .withFailureHandler(err => {
-        doneBusy();
-        setDailyMessage(err.message, false);
-      })
+      .withSuccessHandler(res => { doneBusy(); if (!res.ok) { setDailyMessage(res.reason || 'Không xác nhận được ngày.', false); return; } state.dailyStatus = res.status; state.dailySummary = res.summary; renderDailySummary(res); setDailyMessage('Đã xác nhận/chốt ngày ' + res.summary.ngay + '.', true); if (hasPerm('canViewOverview')) loadManagerDashboard(true); })
+      .withFailureHandler(err => { doneBusy(); setDailyMessage(err.message, false); })
       .apiConfirmDaily(payload);
   }
 
   function reopenDaily() {
-    if (!state.context || !state.context.isQL) {
-      setDailyMessage('Chỉ QL được mở lại ngày.', false);
-      return;
-    }
-
-    const payload = {
-      deviceId: state.deviceId,
-      deviceToken: state.deviceToken,
-      ngay: document.getElementById('dailyDate').value,
-      reason: document.getElementById('dailyNote').value
-    };
-    if (!payload.ngay) {
-      setDailyMessage('Vui lòng chọn ngày cần mở lại.', false);
-      return;
-    }
-    if (!payload.reason.trim()) {
-      setDailyMessage('Vui lòng nhập lý do mở lại ngày.', false);
-      return;
-    }
-    if (!confirm('Mở lại ngày ' + payload.ngay + ' để cho phép sửa/lưu/hủy phiếu?')) return;
-
+    if (!hasPerm('canConfirmDay')) { setDailyMessage('Chỉ QL được mở lại ngày.', false); return; }
+    const payload = authPayload({ ngay: document.getElementById('dailyDate').value, reason: document.getElementById('dailyNote').value });
+    if (!payload.ngay) { setDailyMessage('Vui lòng chọn ngày cần mở lại.', false); return; }
+    if (!payload.reason.trim()) { setDailyMessage('Vui lòng nhập lý do mở lại ngày.', false); return; }
+    if (!confirm('Mở lại ngày ' + payload.ngay + ' để cho phép sửa/lưu/hủy phiếu và thay đổi nghỉ?')) return;
     setDailyMessage('Đang mở lại ngày...', true);
     const doneBusy = beginBusy('Đang mở lại ngày...');
     google.script.run
-      .withSuccessHandler(res => {
-        doneBusy();
-        if (!res.ok) {
-          setDailyMessage(res.reason || 'Không mở lại được ngày.', false);
-          return;
-        }
-        state.dailyStatus = res.status;
-        state.dailySummary = res.summary;
-        renderDailySummary(res);
-        setDailyMessage('Đã mở lại ngày ' + res.summary.ngay + '.', true);
-        if (state.context && state.context.isQL) loadManagerDashboard(true);
-      })
-      .withFailureHandler(err => {
-        doneBusy();
-        setDailyMessage(err.message, false);
-      })
+      .withSuccessHandler(res => { doneBusy(); if (!res.ok) { setDailyMessage(res.reason || 'Không mở lại được ngày.', false); return; } state.dailyStatus = res.status; state.dailySummary = res.summary; renderDailySummary(res); setDailyMessage('Đã mở lại ngày ' + res.summary.ngay + '.', true); if (hasPerm('canViewOverview')) loadManagerDashboard(true); })
+      .withFailureHandler(err => { doneBusy(); setDailyMessage(err.message, false); })
       .apiReopenDaily(payload);
   }
 
   function generateReports() {
-    if (!state.context || !state.context.isQL) {
-      setReportMessage('Chỉ QL được tạo báo cáo.', false);
-      return;
-    }
-
-    const payload = {
-      deviceId: state.deviceId,
-      deviceToken: state.deviceToken,
-      fromDate: document.getElementById('reportFromDate').value,
-      toDate: document.getElementById('reportToDate').value
-    };
-
-    if (!payload.fromDate || !payload.toDate) {
-      setReportMessage('Vui lòng chọn đủ từ ngày và đến ngày.', false);
-      return;
-    }
-
+    if (!hasPerm('canReport')) { setReportMessage('Chỉ QL/NS được tạo báo cáo.', false); return; }
+    const payload = authPayload({ fromDate: document.getElementById('reportFromDate').value, toDate: document.getElementById('reportToDate').value });
+    if (!payload.fromDate || !payload.toDate) { setReportMessage('Vui lòng chọn đủ từ ngày và đến ngày.', false); return; }
     setSectionCollapsed('reportBox', false);
     setReportMessage('Đang tạo báo cáo...', true);
     const doneBusy = beginBusy('Đang tạo báo cáo...');
-
     google.script.run
-      .withSuccessHandler(res => {
-        doneBusy();
-        if (!res.ok) {
-          setReportMessage(res.reason || 'Không tạo được báo cáo.', false);
-          return;
-        }
-        setReportMessage(
-          `Đã tạo báo cáo ${res.fromDate} → ${res.toDate}. Nhân viên: ${res.employeeRows} dòng, hạng mục: ${res.jobRows} dòng.`,
-          true
-        );
-      })
-      .withFailureHandler(err => {
-        doneBusy();
-        setReportMessage(err.message, false);
-      })
+      .withSuccessHandler(res => { doneBusy(); if (!res.ok) { setReportMessage(res.reason || 'Không tạo được báo cáo.', false); return; } setReportMessage(`Đã tạo báo cáo ${res.fromDate} → ${res.toDate}. Nhân viên: ${res.employeeRows} dòng, hạng mục: ${res.jobRows} dòng.`, true); })
+      .withFailureHandler(err => { doneBusy(); setReportMessage(err.message, false); })
       .apiGenerateReports(payload);
   }
 
-
   function loadWorkEntries() {
-    if (!state.context || !state.context.isQL) {
-      setManageMessage('Chỉ QL được quản lý phiếu.', false);
-      return;
-    }
-
-    const payload = {
-      deviceId: state.deviceId,
-      deviceToken: state.deviceToken,
-      ngay: document.getElementById('manageDate').value
-    };
-    if (!payload.ngay) {
-      setManageMessage('Vui lòng chọn ngày cần xem phiếu.', false);
-      return;
-    }
-
+    if (!hasPerm('canManageWorkEntry')) { setManageMessage('Chỉ QL được quản lý phiếu.', false); return; }
+    const payload = authPayload({ ngay: document.getElementById('manageDate').value });
+    if (!payload.ngay) { setManageMessage('Vui lòng chọn ngày cần xem phiếu.', false); return; }
     setSectionCollapsed('manageBox', false);
     setManageMessage('Đang tải danh sách phiếu...', true);
     const doneBusy = beginBusy('Đang tải danh sách phiếu...');
-    const manageLoadTimer = setTimeout(() => {
-      setManageMessage('Tải danh sách phiếu quá lâu. Kiểm tra Apps Script > Executions hoặc thử tải lại.', false);
-    }, 20000);
     google.script.run
-      .withSuccessHandler(res => {
-        clearTimeout(manageLoadTimer);
-        doneBusy();
-        if (!res.ok) {
-          setManageMessage(res.reason || 'Không tải được danh sách phiếu.', false);
-          return;
-        }
-        state.entries = res.entries || [];
-        cancelEntryEdit();
-        renderEntryList();
-        setManageMessage(`Đã tải ${state.entries.length} phiếu ngày ${res.ngay}.`, true);
-      })
-      .withFailureHandler(err => {
-        clearTimeout(manageLoadTimer);
-        doneBusy();
-        setManageMessage(err.message, false);
-      })
+      .withSuccessHandler(res => { doneBusy(); if (!res.ok) { setManageMessage(res.reason || 'Không tải được danh sách phiếu.', false); return; } state.entries = res.entries || []; cancelEntryEdit(); renderEntryList(); setManageMessage(`Đã tải ${state.entries.length} phiếu ngày ${res.ngay}.`, true); })
+      .withFailureHandler(err => { doneBusy(); setManageMessage(err.message, false); })
       .apiListWorkEntries(payload);
-  }
-
-  function escapeHtml(text) {
-    return String(text || '')
-      .replace(/&/g, '&amp;')
-      .replace(/</g, '&lt;')
-      .replace(/>/g, '&gt;')
-      .replace(/"/g, '&quot;')
-      .replace(/'/g, '&#039;');
   }
 
   function renderEntryList() {
     const box = document.getElementById('entryList');
     if (!box) return;
-    if (!state.entries.length) {
-      box.innerHTML = '<p class="empty-note">Không có phiếu trong ngày đã chọn.</p>';
-      return;
-    }
-
+    if (!state.entries.length) { box.innerHTML = '<p class="empty-note">Không có phiếu trong ngày đã chọn.</p>'; return; }
     box.innerHTML = state.entries.map(e => {
       const deleted = e.trangThai === 'DELETED';
       const statusText = deleted ? 'ĐÃ HỦY' : 'ACTIVE';
-      const actionHtml = deleted
-        ? `<div class="entry-meta">Lý do hủy: ${escapeHtml(e.lyDoHuy || '')}</div>`
-        : `<div class="entry-actions">
-             <button class="edit-entry" type="button" onclick="editEntry('${escapeHtml(e.phieuId)}')">Sửa phiếu</button>
-             <button class="delete-entry" type="button" onclick="deleteEntry('${escapeHtml(e.phieuId)}')">Hủy phiếu</button>
-           </div>`;
-      return `
-        <div class="entry-card ${deleted ? 'deleted' : ''}">
-          <div class="entry-head">
-            <span>${escapeHtml(e.phieuId)}</span>
-            <span>${statusText}</span>
-          </div>
-          <div class="entry-meta">
-            <b>${escapeHtml(e.hangMuc)}</b><br>
-            Nội dung: ${escapeHtml(e.noiDungCongViec)}<br>
-            Nhân sự: ${escapeHtml(e.nhanSuText || '')}<br>
-            Tổng: ${e.soNhanSu || 0} người · ${e.tongGio || 0}h<br>
-            Người nhập: ${escapeHtml(e.nguoiNhap)} · Thiết bị: ${escapeHtml(e.deviceId)}
-          </div>
-          ${actionHtml}
-        </div>
-      `;
+      const actionHtml = deleted ? `<div class="entry-meta">Lý do hủy: ${escapeHtml(e.lyDoHuy || '')}</div>` : `<div class="entry-actions"><button class="edit-entry" type="button" onclick="editEntry('${escapeHtml(e.phieuId)}')">Sửa phiếu</button><button class="delete-entry" type="button" onclick="deleteEntry('${escapeHtml(e.phieuId)}')">Hủy phiếu</button></div>`;
+      return `<div class="entry-card ${deleted ? 'deleted' : ''}"><div class="entry-head"><span>${escapeHtml(e.phieuId)}</span><span>${statusText}</span></div><div class="entry-meta"><b>${escapeHtml(e.hangMuc)}</b><br>Nội dung: ${escapeHtml(e.noiDungCongViec)}<br>Nhân sự: ${escapeHtml(e.nhanSuText || '')}<br>Tổng: ${e.soNhanSu || 0} người · ${e.tongGio || 0}h<br>Người nhập: ${escapeHtml(e.nguoiNhap)} · Thiết bị: ${escapeHtml(e.deviceId)}</div>${actionHtml}</div>`;
     }).join('');
   }
 
-  function buildEditEmployeeOptions(selectedSoThe) {
-    const selected = String(selectedSoThe || '');
-    const found = state.editEmployees.some(e => String(e.soThe) === selected);
+  function buildEditEmployeeOptions(selectedKey) {
+    const selected = String(selectedKey || '');
+    const found = state.editEmployees.some(e => String(employeeOptionValue(e)) === selected || String(e.soThe) === selected);
     let list = state.editEmployees.slice();
-    if (selected && !found) {
-      list.unshift({ soThe: selected, hoTen: '', conLai: 8 });
-    }
+    if (selected && !found) list.unshift({ nhanVienID: selected.indexOf('EMP') === 0 ? selected : '', soThe: selected.indexOf('EMP') === 0 ? '' : selected, hoTen: '', conLai: 8 });
     return '<option value="">-- Số thẻ --</option>' + list.map(e => {
-      const sel = String(e.soThe) === selected ? ' selected' : '';
-      return `<option value="${escapeHtml(e.soThe)}" data-conlai="${e.conLai}"${sel}>${escapeHtml(e.soThe)} · còn ${e.conLai}h${Number(e.gioNghi || 0) > 0 ? ' · nghỉ ' + e.gioNghi + 'h' : ''}</option>`;
+      const value = employeeOptionValue(e);
+      const sel = String(value) === selected || String(e.soThe) === selected ? ' selected' : '';
+      return `<option value="${escapeHtml(value)}" data-nhanvienid="${escapeHtml(e.nhanVienID || '')}" data-sothe="${escapeHtml(e.soThe || '')}" data-conlai="${e.conLai}"${sel}>${escapeHtml(e.soThe || value)} · còn ${e.conLai || 8}h${Number(e.gioNghi || 0) > 0 ? ' · nghỉ ' + e.gioNghi + 'h' : ''}</option>`;
     }).join('');
   }
 
   function buildEditHourOptions(max, selectedHour) {
     let html = '<option value="">Giờ</option>';
     const limit = Math.max(1, Math.min(Number(max || 8), 8));
-    for (let i = 1; i <= limit; i++) {
-      const sel = Number(selectedHour) === i ? ' selected' : '';
-      html += `<option value="${i}"${sel}>${i}h</option>`;
-    }
+    for (let i = 1; i <= limit; i++) html += `<option value="${i}"${Number(selectedHour) === i ? ' selected' : ''}>${i}h</option>`;
     return html;
   }
 
-  function addEditEmployeeRow(soThe, soGio) {
+  function addEditEmployeeRow(nhanVienIDOrSoThe, soGio) {
     const wrap = document.getElementById('editEmployeeRows');
     const row = document.createElement('div');
     row.className = 'edit-emp-row';
-    row.innerHTML = `
-      <select class="edit-emp" name="editSoThe">${buildEditEmployeeOptions(soThe)}</select>
-      <select class="edit-hours" name="editSoGio">${buildEditHourOptions(8, soGio)}</select>
-      <button type="button">×</button>
-    `;
+    row.innerHTML = `<select class="edit-emp" name="editSoThe">${buildEditEmployeeOptions(nhanVienIDOrSoThe)}</select><select class="edit-hours" name="editSoGio">${buildEditHourOptions(8, soGio)}</select><button type="button">×</button>`;
     const emp = row.querySelector('.edit-emp');
     const hours = row.querySelector('.edit-hours');
-    emp.onchange = () => {
-      const opt = emp.options[emp.selectedIndex];
-      const max = Number(opt.dataset.conlai || 8);
-      hours.innerHTML = buildEditHourOptions(max, '');
-    };
+    emp.onchange = () => { const opt = emp.options[emp.selectedIndex]; hours.innerHTML = buildEditHourOptions(Number(opt.dataset.conlai || 8), ''); };
     const opt = emp.options[emp.selectedIndex];
-    if (opt && opt.value) {
-      hours.innerHTML = buildEditHourOptions(Number(opt.dataset.conlai || 8), soGio);
-    }
+    if (opt && opt.value) hours.innerHTML = buildEditHourOptions(Number(opt.dataset.conlai || 8), soGio);
     row.querySelector('button').onclick = () => row.remove();
     wrap.appendChild(row);
   }
 
   function editEntry(phieuId) {
-    if (!state.context || !state.context.isQL) {
-      setManageMessage('Chỉ QL được sửa phiếu.', false);
-      return;
-    }
-
+    if (!hasPerm('canManageWorkEntry')) { setManageMessage('Chỉ QL được sửa phiếu.', false); return; }
     setManageMessage('Đang tải chi tiết phiếu...', true);
     setEditMessage('', true);
     const doneBusy = beginBusy('Đang tải chi tiết phiếu...');
-
     google.script.run
-      .withSuccessHandler(res => {
-        doneBusy();
-        if (!res.ok) {
-          setManageMessage(res.reason || 'Không tải được chi tiết phiếu.', false);
-          return;
-        }
-        state.editingEntry = res.entry;
-        state.editEmployees = res.employees || [];
-        renderEntryEditForm(res.entry);
-        setManageMessage('Đã tải chi tiết phiếu: ' + res.entry.phieuId, true);
-      })
-      .withFailureHandler(err => {
-        doneBusy();
-        setManageMessage(err.message, false);
-      })
-      .apiGetWorkEntryDetail({
-        deviceId: state.deviceId,
-        deviceToken: state.deviceToken,
-        phieuId
-      });
+      .withSuccessHandler(res => { doneBusy(); if (!res.ok) { setManageMessage(res.reason || 'Không tải được chi tiết phiếu.', false); return; } state.editingEntry = res.entry; state.editEmployees = res.employees || []; renderEntryEditForm(res.entry); setManageMessage('Đã tải chi tiết phiếu: ' + res.entry.phieuId, true); })
+      .withFailureHandler(err => { doneBusy(); setManageMessage(err.message, false); })
+      .apiGetWorkEntryDetail(authPayload({ phieuId }));
   }
 
   function renderEntryEditForm(entry) {
@@ -1328,7 +1143,7 @@
     document.getElementById('editNoiDungCongViec').value = entry.noiDungCongViec || '';
     document.getElementById('editReason').value = '';
     document.getElementById('editEmployeeRows').innerHTML = '';
-    (entry.details || []).forEach(d => addEditEmployeeRow(d.soThe, d.soGio));
+    (entry.details || []).forEach(d => addEditEmployeeRow(d.nhanVienID || d.soThe, d.soGio));
     if (!(entry.details || []).length) addEditEmployeeRow();
     box.scrollIntoView({ behavior: 'smooth', block: 'start' });
   }
@@ -1345,108 +1160,55 @@
     const rows = Array.from(document.querySelectorAll('#editEmployeeRows .edit-emp-row'));
     const nhanSu = [];
     const seen = {};
-
     rows.forEach(row => {
-      const soThe = row.querySelector('select[name="editSoThe"]').value;
+      const sel = row.querySelector('select[name="editSoThe"]');
+      const opt = sel.options[sel.selectedIndex];
+      const nhanVienID = opt ? (opt.dataset.nhanvienid || '') : '';
+      const soThe = opt ? (opt.dataset.sothe || '') : '';
+      const key = nhanVienID || soThe || sel.value;
       const soGio = Number(row.querySelector('select[name="editSoGio"]').value);
-      if (!soThe && !soGio) return;
-      if (!soThe || !soGio) {
-        throw new Error('Có dòng nhân viên sửa chưa chọn đủ số thẻ và số giờ.');
-      }
-      if (seen[soThe]) {
-        throw new Error(`Số thẻ ${soThe} bị chọn trùng trong phiếu sửa. Hãy gộp giờ vào một dòng.`);
-      }
-      seen[soThe] = true;
-      nhanSu.push({ soThe, soGio });
+      if (!key && !soGio) return;
+      if (!key || !soGio) throw new Error('Có dòng nhân viên sửa chưa chọn đủ số thẻ và số giờ.');
+      if (seen[key]) throw new Error(`Nhân viên ${soThe || key} bị chọn trùng trong phiếu sửa. Hãy gộp giờ vào một dòng.`);
+      seen[key] = true;
+      nhanSu.push({ nhanVienID, soThe, soGio });
     });
-
-    if (!nhanSu.length) {
-      throw new Error('Phiếu sửa phải có ít nhất 1 nhân viên.');
-    }
-
-    const payload = {
-      deviceId: state.deviceId,
-      deviceToken: state.deviceToken,
+    if (!nhanSu.length) throw new Error('Phiếu sửa phải có ít nhất 1 nhân viên.');
+    const payload = authPayload({
       phieuId: document.getElementById('editPhieuId').value,
       noiDungCongViec: document.getElementById('editNoiDungCongViec').value,
       reason: document.getElementById('editReason').value,
       nhanSu,
       nhanSuJson: JSON.stringify(nhanSu)
-    };
-
+    });
     if (!payload.reason.trim()) throw new Error('Vui lòng nhập lý do sửa phiếu.');
     return payload;
   }
 
   function saveEntryEdit() {
     let payload;
-    try {
-      payload = collectEditPayload();
-    } catch (err) {
-      setEditMessage(err.message, false);
-      return;
-    }
-
+    try { payload = collectEditPayload(); } catch (err) { setEditMessage(err.message, false); return; }
     if (!confirm('Xác nhận lưu sửa phiếu ' + payload.phieuId + '?')) return;
-
     setEditMessage('Đang lưu sửa phiếu...', true);
     const doneBusy = beginBusy('Đang lưu sửa phiếu...');
     google.script.run
-      .withSuccessHandler(res => {
-        doneBusy();
-        if (!res.ok) {
-          setEditMessage(res.reason || 'Không sửa được phiếu.', false);
-          return;
-        }
-        setEditMessage('Đã sửa phiếu: ' + res.phieuId + ' · ' + res.updatedNhanSu + ' nhân viên', true);
-        reloadEmployees(true);
-        loadWorkEntries();
-        if (state.context && state.context.isQL) loadManagerDashboard(true);
-      })
-      .withFailureHandler(err => {
-        doneBusy();
-        setEditMessage(err.message, false);
-      })
+      .withSuccessHandler(res => { doneBusy(); if (!res.ok) { setEditMessage(res.reason || 'Không sửa được phiếu.', false); return; } setEditMessage('Đã sửa phiếu: ' + res.phieuId + ' · ' + res.updatedNhanSu + ' nhân viên', true); reloadEmployees(true); loadWorkEntries(); if (hasPerm('canViewOverview')) loadManagerDashboard(true); })
+      .withFailureHandler(err => { doneBusy(); setEditMessage(err.message, false); })
       .apiUpdateWorkEntry(payload);
   }
 
   function deleteEntry(phieuId) {
     const reason = prompt('Nhập lý do hủy phiếu ' + phieuId + ':');
     if (reason === null) return;
-    if (!reason.trim()) {
-      setManageMessage('Lý do hủy phiếu không được trống.', false);
-      return;
-    }
-    if (!confirm('Xác nhận hủy phiếu ' + phieuId + '? Dữ liệu sẽ không bị xóa vật lý, nhưng báo cáo và tính giờ sẽ bỏ qua phiếu này.')) {
-      return;
-    }
-
+    if (!reason.trim()) { setManageMessage('Lý do hủy phiếu không được trống.', false); return; }
+    if (!confirm('Xác nhận hủy phiếu ' + phieuId + '? Dữ liệu sẽ không bị xóa vật lý, nhưng báo cáo và tính giờ sẽ bỏ qua phiếu này.')) return;
     setManageMessage('Đang hủy phiếu...', true);
     const doneBusy = beginBusy('Đang hủy phiếu...');
     google.script.run
-      .withSuccessHandler(res => {
-        doneBusy();
-        if (!res.ok) {
-          setManageMessage(res.reason || 'Không hủy được phiếu.', false);
-          return;
-        }
-        setManageMessage('Đã hủy phiếu: ' + res.phieuId, true);
-        reloadEmployees(true);
-        loadWorkEntries();
-        if (state.context && state.context.isQL) loadManagerDashboard(true);
-      })
-      .withFailureHandler(err => {
-        doneBusy();
-        setManageMessage(err.message, false);
-      })
-      .apiSoftDeleteWorkEntry({
-        deviceId: state.deviceId,
-        deviceToken: state.deviceToken,
-        phieuId,
-        reason
-      });
+      .withSuccessHandler(res => { doneBusy(); if (!res.ok) { setManageMessage(res.reason || 'Không hủy được phiếu.', false); return; } setManageMessage('Đã hủy phiếu: ' + res.phieuId, true); reloadEmployees(true); loadWorkEntries(); if (hasPerm('canViewOverview')) loadManagerDashboard(true); })
+      .withFailureHandler(err => { doneBusy(); setManageMessage(err.message, false); })
+      .apiSoftDeleteWorkEntry(authPayload({ phieuId, reason }));
   }
-
 
   window.addEventListener('load', init);
 </script>

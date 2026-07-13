@@ -7,7 +7,7 @@ function listJobs(context) {
       nhom: j.Nhom || ''
     }));
 
-  if (context && context.isQL) {
+  if (context && canAddJob_(context)) {
     jobs.push({
       maCongViec: APP.ADD_NEW_JOB_VALUE,
       hangMuc: '+ THÊM HẠNG MỤC MỚI',
@@ -42,7 +42,7 @@ function getNextJobCode_() {
 }
 
 function addJobIfAllowed_(hangMuc, context) {
-  if (!context || !context.isQL) {
+  if (!context || !canAddJob_(context)) {
     throw new Error('Chỉ QL được thêm hạng mục mới.');
   }
 

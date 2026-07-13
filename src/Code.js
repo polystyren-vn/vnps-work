@@ -31,13 +31,23 @@ function apiInit(authPayload, ngay) {
     version: APP.VERSION,
     context: {
       deviceId: context.deviceId,
+      nhanVienID: context.nhanVienID,
       soThe: context.soThe,
       hoTen: context.hoTen,
       viTri: context.viTri,
-      isQL: context.isQL
+      isQL: context.isQL,
+      isNS: context.isNS,
+      isNV: context.isNV,
+      canViewOverview: context.canViewOverview,
+      canManageLeave: context.canManageLeave,
+      canReport: context.canReport,
+      canManageWorkEntry: context.canManageWorkEntry,
+      canManageDevice: context.canManageDevice,
+      canConfirmDay: context.canConfirmDay,
+      canAddJob: context.canAddJob
     },
     jobs: listJobs(context),
-    employees: getAvailableEmployees(payload.ngay || Utilities.formatDate(new Date(), APP.TIMEZONE, 'yyyy-MM-dd'))
+    employees: context.canManageWorkEntry ? getAvailableEmployees(payload.ngay || Utilities.formatDate(new Date(), APP.TIMEZONE, 'yyyy-MM-dd')) : []
   };
 }
 
@@ -52,6 +62,7 @@ function apiGetAvailableEmployees(authPayload, ngay) {
       canRegister: !!context.canRegister
     };
   }
+  if (!canManageWorkEntry_(context)) return { ok: false, reason: 'Chỉ QL được tải danh sách nhân viên phân công.' };
   return { ok: true, employees: getAvailableEmployees(payload.ngay) };
 }
 
@@ -132,4 +143,8 @@ function apiSaveEmployeeLeave(payload) {
 
 function apiCancelEmployeeLeave(payload) {
   return cancelEmployeeLeave(payload);
+}
+
+function apiUpdateEmployeeLeave(payload) {
+  return updateEmployeeLeave(payload);
 }

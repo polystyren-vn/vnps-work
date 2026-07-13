@@ -1,4 +1,9 @@
+function ensureWorkDetailEmployeeSchema_() {
+  return ensureSheetColumns_(SHEETS.DATA_NHAN_SU_CONG_VIEC, HEADERS.DATA_NHAN_SU_CONG_VIEC);
+}
+
 function getUsedHoursByDate_(ngay) {
+  ensureWorkDetailEmployeeSchema_();
   const key = dateKey_(ngay);
   const activeMap = makeActiveWorkEntryMap_();
   const rows = readObjects_(SHEETS.DATA_NHAN_SU_CONG_VIEC);
@@ -7,9 +12,10 @@ function getUsedHoursByDate_(ngay) {
     if (dateKey_(r.Ngay) !== key) return;
     const phieuId = String(r.PhieuID || '').trim();
     if (!activeMap[phieuId]) return;
-    const soThe = String(r.SoThe || '').trim();
+    const empKey = rowEmployeeKey_(r);
+    if (!empKey) return;
     const gio = Number(r.SoGio || 0);
-    used[soThe] = (used[soThe] || 0) + gio;
+    used[empKey] = (used[empKey] || 0) + gio;
   });
   return used;
 }
@@ -17,12 +23,14 @@ function getUsedHoursByDate_(ngay) {
 function getAvailableEmployees(ngay) {
   const used = getUsedHoursByDate_(ngay);
   const leaveHours = getLeaveHoursMapByDate_(ngay);
-  return listAssignableEmployeesByDate_(ngay)
+  // V0.11.2.1: dùng listActiveWorkEmployees_ để tránh đọc DATA_NHAN_VIEN_NGHI lần 2.
+  return listActiveWorkEmployees_()
     .map(e => {
-      const daDung = used[e.soThe] || 0;
-      const gioNghi = Number(leaveHours[e.soThe] || e.gioNghi || 0);
+      const key = employeeKey_(e);
+      const daDung = used[key] || 0;
+      const gioNghi = Number(leaveHours[key] || 0);
       const conLai = Math.max(0, APP.MAX_HOURS_PER_DAY - daDung - gioNghi);
-      return Object.assign({}, e, { daDung, gioNghi, conLai });
+      return Object.assign({}, e, { daDung, gioNghi, conLai, nghi: gioNghi > 0 });
     })
     .filter(e => e.conLai > 0);
 }
@@ -55,10 +63,7 @@ function resolveJobForSave_(payload, context) {
 }
 
 /**
- * V0.1.1: chuẩn hóa danh sách nhân sự từ 2 nguồn:
- * - payload.nhanSu: mảng object thông thường.
- * - payload.nhanSuJson: chuỗi JSON dự phòng từ frontend.
- * Mục tiêu: tránh lỗi Apps Script chỉ nhận dòng đầu khi truyền payload phức hợp.
+ * V0.11.2: chuẩn hóa danh sách nhân sự theo NhanVienID, vẫn nhận SoThe để tương thích dữ liệu/frontend cũ.
  */
 function normalizeNhanSuPayload_(payload) {
   let list = [];
@@ -78,10 +83,11 @@ function normalizeNhanSuPayload_(payload) {
 
   payload.nhanSu = (list || [])
     .map(item => ({
-      soThe: String(item.soThe || '').trim(),
-      soGio: Number(item.soGio || 0)
+      nhanVienID: String(item.nhanVienID || item.NhanVienID || '').trim(),
+      soThe: String(item.soThe || item.SoThe || '').trim(),
+      soGio: Number(item.soGio || item.SoGio || 0)
     }))
-    .filter(item => item.soThe && item.soGio);
+    .filter(item => (item.nhanVienID || item.soThe) && item.soGio);
 
   return payload;
 }
@@ -97,7 +103,7 @@ function validateWorkEntryPayload_(payload) {
   if (!payload.nhanSu || !payload.nhanSu.length) throw new Error('Chưa chọn nhân viên.');
 
   payload.nhanSu.forEach(item => {
-    if (!item.soThe) throw new Error('Có dòng nhân viên thiếu số thẻ.');
+    if (!item.nhanVienID && !item.soThe) throw new Error('Có dòng nhân viên thiếu định danh.');
     const gio = Number(item.soGio);
     if (!gio || gio < 1 || gio > APP.MAX_HOURS_PER_DAY) {
       throw new Error('Số giờ phải từ 1 đến 8.');
@@ -105,6 +111,25 @@ function validateWorkEntryPayload_(payload) {
   });
 
   return payload;
+}
+
+function resolveNhanSuForSave_(nhanSuList) {
+  return (nhanSuList || []).map(item => {
+    const emp = resolveEmployeeInput_(item);
+    if (!emp) {
+      throw new Error('Không tìm thấy nhân viên: ' + (item.nhanVienID || item.soThe || ''));
+    }
+    if (!isAssignableEmployee_(emp)) {
+      throw new Error('Nhân viên ' + employeeSoThe_(emp) + ' không được phân công công việc. Chỉ nhân viên ViTri=NV và TrangThai=Đang làm được chọn.');
+    }
+    return {
+      nhanVienID: employeeId_(emp),
+      soThe: employeeSoThe_(emp),
+      hoTen: employeeHoTen_(emp),
+      key: employeeKey_(emp),
+      soGio: Number(item.soGio || 0)
+    };
+  });
 }
 
 function saveWorkEntry(payload) {
@@ -116,28 +141,27 @@ function saveWorkEntry(payload) {
   try {
     const context = getDeviceContext(payload.deviceId, payload.deviceToken);
     if (!context.ok) throw new Error(context.reason);
+    if (!canManageWorkEntry_(context)) throw new Error('Chỉ QL được lưu phiếu công việc.');
 
     // V0.7: ngày đã xác nhận/chốt thì không được phát sinh phiếu mới.
     assertDailyOpenForChange_(payload.ngay, 'lưu phiếu mới');
 
     const job = resolveJobForSave_(payload, context);
     const used = getUsedHoursByDate_(payload.ngay);
+    const resolvedNhanSu = resolveNhanSuForSave_(payload.nhanSu);
 
     const batchAdd = {};
-    payload.nhanSu.forEach(item => {
-      const soThe = String(item.soThe).trim();
-      const gio = Number(item.soGio);
-      batchAdd[soThe] = (batchAdd[soThe] || 0) + gio;
+    resolvedNhanSu.forEach(item => {
+      batchAdd[item.key] = (batchAdd[item.key] || 0) + Number(item.soGio || 0);
     });
 
-    validateEmployeesAssignableForDate_(payload.ngay, Object.keys(batchAdd));
-
     const leaveHours = getLeaveHoursMapByDate_(payload.ngay);
-    Object.keys(batchAdd).forEach(soThe => {
-      const nghi = Number(leaveHours[soThe] || 0);
-      const total = (used[soThe] || 0) + batchAdd[soThe] + nghi;
+    Object.keys(batchAdd).forEach(empKey => {
+      const nghi = Number(leaveHours[empKey] || 0);
+      const total = (used[empKey] || 0) + batchAdd[empKey] + nghi;
       if (total > APP.MAX_HOURS_PER_DAY) {
-        throw new Error('Số thẻ ' + soThe + ' vượt 8h/ngày. Đã có ' + (used[soThe] || 0) + 'h làm, nghỉ ' + nghi + 'h, nhập thêm ' + batchAdd[soThe] + 'h.');
+        const emp = resolvedNhanSu.find(x => x.key === empKey) || {};
+        throw new Error('Nhân viên ' + (emp.soThe || empKey) + ' vượt 8h/ngày. Đã có ' + (used[empKey] || 0) + 'h làm, nghỉ ' + nghi + 'h, nhập thêm ' + batchAdd[empKey] + 'h.');
       }
     });
 
@@ -159,15 +183,21 @@ function saveWorkEntry(payload) {
       TrangThai: APP.ENTRY_STATUS_ACTIVE,
       HuyBoi: '',
       ThoiGianHuy: '',
-      LyDoHuy: ''
+      LyDoHuy: '',
+      SuaBoi: '',
+      ThoiGianSua: '',
+      LyDoSua: ''
     });
 
-    const detailRows = payload.nhanSu.map(item => ({
-      ID: phieuId + '_' + String(item.soThe).trim(),
+    ensureWorkDetailEmployeeSchema_();
+    const detailRows = resolvedNhanSu.map(item => ({
+      ID: phieuId + '_' + (item.nhanVienID || item.soThe),
       PhieuID: phieuId,
       Ngay: ngayKey,
       MaCongViec: maCongViec,
-      SoThe: String(item.soThe).trim(),
+      NhanVienID: item.nhanVienID,
+      SoThe: item.soThe,
+      HoTen: item.hoTen,
       SoGio: Number(item.soGio)
     }));
 
@@ -181,7 +211,7 @@ function saveWorkEntry(payload) {
       maCongViec,
       hangMuc: job.HangMuc,
       soDongNhanSu: insertedDetailRows,
-      receivedNhanSu: payload.nhanSu
+      receivedNhanSu: resolvedNhanSu
     };
   } catch (err) {
     try {
