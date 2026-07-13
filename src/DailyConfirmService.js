@@ -1,14 +1,9 @@
 /**
  * VNPS Work Assign - DailyConfirmService
- * Version: V0.11_EMPLOYEE_LEAVE_HOURS_QUOTA
+ * Version: V0.11.2.1_EMPLOYEE_ID_NS_PERFORMANCE_FIX
  *
- * Phạm vi:
- * - Tạo sheet DATA_CHOT_NGAY tự động nếu chưa có.
- * - QL kiểm tra tổng giờ theo nhân viên trong ngày.
- * - QL xác nhận/chốt ngày và mở lại ngày có lý do.
- * - Khi ngày CONFIRMED: chặn lưu phiếu mới, sửa phiếu, hủy phiếu.
+ * Chốt/mở ngày vẫn chỉ QL. Tổng hợp giờ tính theo NhanVienID, fallback SoThe cho dữ liệu cũ.
  */
-
 function ensureDailyStatusSheet_() {
   const db = getDb_();
   let sh = db.getSheetByName(SHEETS.DATA_CHOT_NGAY);
@@ -107,20 +102,22 @@ function buildDailyEmployeeSummary_(ngay) {
   const key = dateKey_(ngay);
   if (!key) throw new Error('Ngày kiểm tra không hợp lệ.');
 
-  const activeEmployees = listActiveWorkEmployees_(); // Loại QL khỏi nhóm phân công công việc.
-  const leaveMap = getActiveLeaveMapByDate_(key);
-  const leaveHoursMap = getLeaveHoursMapByDate_(key);
+  const activeEmployees = listActiveWorkEmployees_();
+  const leaveMaps = getLeaveMapsByDate_(key);
+  const leaveMap = leaveMaps.rowsByKey || {};
+  const leaveHoursMap = leaveMaps.hoursByKey || {};
   const employeeMap = {};
   const group = {};
 
   activeEmployees.forEach(e => {
-    const soThe = String(e.soThe || '').trim();
-    if (!soThe) return;
-    employeeMap[soThe] = e;
-    const leaveRows = leaveMap[soThe] || [];
-    const gioNghi = Number(leaveHoursMap[soThe] || 0);
-    group[soThe] = {
-      soThe,
+    const empKey = employeeKey_(e);
+    if (!empKey) return;
+    employeeMap[empKey] = e;
+    const leaveRows = leaveMap[empKey] || [];
+    const gioNghi = Number(leaveHoursMap[empKey] || 0);
+    group[empKey] = {
+      nhanVienID: e.nhanVienID || '',
+      soThe: e.soThe || '',
       hoTen: e.hoTen || '',
       gioLam: 0,
       gioNghi,
@@ -132,21 +129,23 @@ function buildDailyEmployeeSummary_(ngay) {
   const headerInfo = makeDailyWorkHeaderMap_(key);
   const activePhieuMap = headerInfo.map;
 
+  ensureWorkDetailEmployeeSchema_();
   readObjects_(SHEETS.DATA_NHAN_SU_CONG_VIEC).forEach(r => {
     if (dateKey_(r.Ngay) !== key) return;
     const phieuId = String(r.PhieuID || '').trim();
     const phieu = activePhieuMap[phieuId];
     if (!phieu) return;
 
-    const soThe = String(r.SoThe || '').trim();
-    if (!soThe) return;
-    if (!group[soThe]) {
-      // Dữ liệu cũ có thể chứa nhân viên QL/đã khóa; vẫn hiển thị để QL phát hiện và sửa.
-      const leaveRows = leaveMap[soThe] || [];
-      const gioNghi = Number(leaveHoursMap[soThe] || 0);
-      group[soThe] = {
-        soThe,
-        hoTen: employeeMap[soThe] ? employeeMap[soThe].hoTen : '',
+    const empKey = rowEmployeeKey_(r);
+    if (!empKey) return;
+    if (!group[empKey]) {
+      const leaveRows = leaveMap[empKey] || [];
+      const gioNghi = Number(leaveHoursMap[empKey] || 0);
+      const emp = employeeMap[empKey] || resolveEmployeeInput_({ NhanVienID: r.NhanVienID, SoThe: r.SoThe }) || {};
+      group[empKey] = {
+        nhanVienID: String(r.NhanVienID || employeeId_(emp) || '').trim(),
+        soThe: String(r.SoThe || employeeSoThe_(emp) || '').trim(),
+        hoTen: clientSafeText_(r.HoTen) || employeeHoTen_(emp) || '',
         gioLam: 0,
         gioNghi,
         chiTiet: leaveRows.length ? [getLeaveReasonTextForEmployee_(leaveRows)] : [],
@@ -156,12 +155,12 @@ function buildDailyEmployeeSummary_(ngay) {
 
     const gio = Number(r.SoGio || 0);
     const hangMuc = clientSafeText_(phieu.HangMuc || r.MaCongViec || phieuId);
-    group[soThe].gioLam += gio;
-    group[soThe].chiTiet.push(hangMuc + ' ' + gio + 'h');
+    group[empKey].gioLam += gio;
+    group[empKey].chiTiet.push(hangMuc + ' ' + gio + 'h');
   });
 
-  const rows = Object.keys(group).sort().map(soThe => {
-    const item = group[soThe];
+  const rows = Object.keys(group).sort().map(empKey => {
+    const item = group[empKey];
     const gioLam = Number(item.gioLam || 0);
     const gioNghi = Number(item.gioNghi || 0);
     const tongGio = gioLam + gioNghi;
@@ -183,7 +182,8 @@ function buildDailyEmployeeSummary_(ngay) {
     }
 
     return {
-      soThe: item.soThe,
+      nhanVienID: item.nhanVienID || '',
+      soThe: item.soThe || '',
       hoTen: item.hoTen || '',
       tongGio: Number(tongGio || 0),
       gioLam,
@@ -255,7 +255,7 @@ function requireQlContextForDaily_(payload) {
 
   const context = getDeviceContext(payload.deviceId, payload.deviceToken);
   if (!context.ok) throw new Error(context.reason);
-  if (!context.isQL) throw new Error('Chỉ QL được kiểm tra/chốt ngày.');
+  if (!canConfirmDay_(context)) throw new Error('Chỉ QL được kiểm tra/chốt ngày.');
   return context;
 }
 

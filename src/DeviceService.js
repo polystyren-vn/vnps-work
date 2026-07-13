@@ -1,14 +1,10 @@
 /**
  * VNPS Work Assign - DeviceService
- * Version: V0.9_DEVICE_BROWSER_TOKEN_REGISTER
+ * Version: V0.11.2.1_EMPLOYEE_ID_NS_PERFORMANCE_FIX
  *
- * Mục tiêu bảo mật V0.9:
- * - Người dùng mở WEB_APP_URL chung, không cần ?deviceId=...
- * - Mỗi trình duyệt tự có DeviceID + DeviceToken lưu localStorage.
- * - Backend chỉ duyệt thiết bị nếu DeviceID + DeviceToken khớp TokenHash trong DM_THIET_BI.
- * - Chia sẻ link không đủ để đăng nhập vì người nhận link không có DeviceToken của trình duyệt đã duyệt.
+ * Giữ nguyên cơ chế V0.9: WEB_APP_URL chung + DeviceID + DeviceToken theo trình duyệt.
+ * V0.11.2 bổ sung NhanVienIDDangKy để tránh nhầm khi SoThe tái sử dụng.
  */
-
 function ensureDeviceSecuritySchema_() {
   return ensureSheetColumns_(SHEETS.DM_THIET_BI, HEADERS.DM_THIET_BI);
 }
@@ -70,6 +66,27 @@ function checkDeviceToken_(device, auth) {
   }
 
   return { ok: true };
+}
+
+function resolveDeviceOwner_(device) {
+  const employeeId = String(device && device.NhanVienIDDangKy || '').trim();
+  if (employeeId) return getEmployeeById_(employeeId);
+  const soThe = String(device && device.SoTheDangKy || '').trim();
+  if (soThe) return getEmployeeByCard_(soThe, true);
+  return null;
+}
+
+function buildDeviceContext_(id, device, employee) {
+  const flags = permissionFlags_(employee);
+  return Object.assign({
+    ok: true,
+    deviceId: id,
+    device,
+    nhanVienID: employeeId_(employee),
+    soThe: employeeSoThe_(employee),
+    hoTen: employeeHoTen_(employee),
+    viTri: employeeViTri_(employee)
+  }, flags);
 }
 
 function getDeviceContext(deviceIdOrPayload, deviceToken) {
@@ -136,7 +153,7 @@ function getDeviceContext(deviceIdOrPayload, deviceToken) {
     };
   }
 
-  const employee = getEmployeeByCard_(device.SoTheDangKy);
+  const employee = resolveDeviceOwner_(device);
   if (!employee || String(employee.TrangThai).trim() !== 'Đang làm') {
     writeLog_(id, device.SoTheDangKy, 'CHAN_TRUY_CAP', 'Người đăng ký thiết bị không hợp lệ');
     return {
@@ -148,15 +165,7 @@ function getDeviceContext(deviceIdOrPayload, deviceToken) {
     };
   }
 
-  return {
-    ok: true,
-    deviceId: id,
-    device,
-    soThe: String(employee.SoThe).trim(),
-    hoTen: employee.HoTen || '',
-    viTri: employee.ViTri || '',
-    isQL: String(employee.ViTri).trim() === 'QL'
-  };
+  return buildDeviceContext_(id, device, employee);
 }
 
 function validateRegisterDevicePayload_(payload) {
@@ -174,7 +183,7 @@ function validateRegisterDevicePayload_(payload) {
   if (!tenThietBi) throw new Error('Vui lòng nhập tên thiết bị.');
   if (!soTheDangKy) throw new Error('Vui lòng nhập số thẻ đăng ký.');
 
-  const employee = getEmployeeByCard_(soTheDangKy);
+  const employee = getEmployeeByCard_(soTheDangKy, true);
   if (!employee || String(employee.TrangThai).trim() !== 'Đang làm') {
     throw new Error('Số thẻ đăng ký không hợp lệ hoặc không còn đang làm.');
   }
@@ -229,7 +238,9 @@ function registerDevice(payload) {
     appendObject_(SHEETS.DM_THIET_BI, {
       DeviceID: input.deviceId,
       TenThietBi: input.tenThietBi,
-      SoTheDangKy: input.soTheDangKy,
+      NhanVienIDDangKy: employeeId_(input.employee),
+      SoTheDangKy: employeeSoThe_(input.employee),
+      HoTenDangKy: employeeHoTen_(input.employee),
       TrangThai: APP.DEVICE_STATUS_PENDING,
       NgayDangKy: today,
       GhiChu: input.ghiChu || 'Đăng ký từ trình duyệt web form',
@@ -243,9 +254,9 @@ function registerDevice(payload) {
 
     writeLog_(
       input.deviceId,
-      input.soTheDangKy,
+      employeeSoThe_(input.employee),
       'DANG_KY_THIET_BI_TOKEN',
-      input.tenThietBi + ' · ' + input.employee.HoTen + ' · Trạng thái=' + APP.DEVICE_STATUS_PENDING
+      input.tenThietBi + ' · ' + employeeId_(input.employee) + ' · ' + employeeHoTen_(input.employee) + ' · Trạng thái=' + APP.DEVICE_STATUS_PENDING
     );
 
     return {
@@ -267,7 +278,7 @@ function registerDevice(payload) {
 function listPendingDevicesForApprove(payload) {
   const context = getDeviceContext(payload.deviceId, payload.deviceToken);
   if (!context.ok) return { ok: false, reason: context.reason, code: context.code };
-  if (!context.isQL) return { ok: false, reason: 'Chỉ QL được duyệt thiết bị.' };
+  if (!canManageDevice_(context)) return { ok: false, reason: 'Chỉ QL được duyệt thiết bị.' };
 
   ensureDeviceSecuritySchema_();
   const rows = readObjects_(SHEETS.DM_THIET_BI)
@@ -275,7 +286,9 @@ function listPendingDevicesForApprove(payload) {
     .map(r => ({
       deviceId: clientSafeText_(r.DeviceID),
       tenThietBi: clientSafeText_(r.TenThietBi),
+      nhanVienIDDangKy: clientSafeText_(r.NhanVienIDDangKy),
       soTheDangKy: clientSafeText_(r.SoTheDangKy),
+      hoTenDangKy: clientSafeText_(r.HoTenDangKy),
       ngayDangKy: clientSafeText_(r.NgayDangKy, 'yyyy-MM-dd'),
       ghiChu: clientSafeText_(r.GhiChu),
       dangKyCuoi: clientSafeText_(r.DangKyCuoi, 'yyyy-MM-dd HH:mm:ss')
@@ -290,15 +303,15 @@ function approvePendingDevice(payload) {
 
   const context = getDeviceContext(payload.deviceId, payload.deviceToken);
   if (!context.ok) return { ok: false, reason: context.reason, code: context.code };
-  if (!context.isQL) return { ok: false, reason: 'Chỉ QL được duyệt thiết bị.' };
+  if (!canManageDevice_(context)) return { ok: false, reason: 'Chỉ QL được duyệt thiết bị.' };
 
   const targetDeviceId = String(payload.targetDeviceId || '').trim();
   const soTheDangKy = String(payload.soTheDangKy || '').trim();
   if (!targetDeviceId) return { ok: false, reason: 'Thiếu DeviceID cần duyệt.' };
   if (!soTheDangKy) return { ok: false, reason: 'Vui lòng nhập số thẻ gán cho thiết bị.' };
 
-  const employee = getEmployeeByCard_(soTheDangKy);
-  if (!employee || String(employee.TrangThai).trim() !== 'Đang làm') {
+  const employee = getEmployeeByCard_(soTheDangKy, true);
+  if (!employee || String(employee.TrangThai || '').trim() !== 'Đang làm') {
     return { ok: false, reason: 'Số thẻ gán thiết bị không hợp lệ hoặc không còn đang làm.' };
   }
 
@@ -316,14 +329,16 @@ function approvePendingDevice(payload) {
     }
 
     updateObjectByRowNumber_(SHEETS.DM_THIET_BI, row.__rowNumber, {
-      SoTheDangKy: soTheDangKy,
+      NhanVienIDDangKy: employeeId_(employee),
+      SoTheDangKy: employeeSoThe_(employee),
+      HoTenDangKy: employeeHoTen_(employee),
       TrangThai: APP.DEVICE_STATUS_ACTIVE,
       DuyetBoi: context.soThe,
       ThoiGianDuyet: nowText_()
     });
 
-    writeLog_(context.deviceId, context.soThe, 'DUYET_THIET_BI', targetDeviceId + ' · gán ' + soTheDangKy + ' - ' + (employee.HoTen || ''));
-    return { ok: true, deviceId: targetDeviceId, soTheDangKy, reason: 'Đã duyệt thiết bị ' + targetDeviceId + '.' };
+    writeLog_(context.deviceId, context.soThe, 'DUYET_THIET_BI', targetDeviceId + ' · gán ' + employeeId_(employee) + ' · ' + employeeSoThe_(employee) + ' - ' + employeeHoTen_(employee));
+    return { ok: true, deviceId: targetDeviceId, nhanVienIDDangKy: employeeId_(employee), soTheDangKy: employeeSoThe_(employee), reason: 'Đã duyệt thiết bị ' + targetDeviceId + '.' };
   } finally {
     lock.releaseLock();
   }

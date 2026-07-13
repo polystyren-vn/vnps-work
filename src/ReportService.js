@@ -1,15 +1,9 @@
 /**
  * VNPS Work Assign - ReportService
- * Version: V0.11_EMPLOYEE_LEAVE_HOURS_QUOTA
+ * Version: V0.11.2.1_EMPLOYEE_ID_NS_PERFORMANCE_FIX
  *
- * Phạm vi V0.3:
- * - Dựng REPORT_NHAN_VIEN_NGAY.
- * - Dựng REPORT_HANG_MUC_NGAY.
- * - Chỉ QL được tạo báo cáo.
- * - Báo cáo bỏ qua phiếu TrangThai = DELETED.
- * - Không đổi logic đăng ký thiết bị.
+ * V0.11.2: QL/NS được tạo báo cáo. Báo cáo dùng NhanVienID, fallback SoThe cho dữ liệu cũ.
  */
-
 function parseDateKey_(value) {
   const key = dateKey_(value);
   const m = String(key || '').match(/^(\d{4})-(\d{2})-(\d{2})$/);
@@ -39,10 +33,14 @@ function getDateRangeKeys_(fromDate, toDate) {
 
 function makeEmployeeMap_() {
   const map = {};
-  readObjects_(SHEETS.DM_NHAN_VIEN).forEach(e => {
+  const byCard = {};
+  getEmployeeCache_().rows.forEach(e => {
+    const key = employeeKey_(e);
     const soThe = String(e.SoThe || '').trim();
-    if (soThe) map[soThe] = e;
+    if (key) map[key] = e;
+    if (soThe && !byCard[soThe]) byCard[soThe] = e;
   });
+  map.__byCard = byCard;
   return map;
 }
 
@@ -100,6 +98,7 @@ function clearAndWriteReport_(sheetName, values) {
 }
 
 function getWorkDetailRowsInRange_(dateKeys) {
+  ensureWorkDetailEmployeeSchema_();
   const dateSet = {};
   dateKeys.forEach(d => dateSet[d] = true);
   const activePhieuMap = makeWorkHeaderMap_();
@@ -125,34 +124,43 @@ function buildEmployeeReportValues_(fromDate, toDate) {
   const phieuMap = makeWorkHeaderMap_();
   const group = {};
 
-  function ensureGroup_(ngay, soThe, hoTen) {
-    const key = ngay + '|' + soThe;
+  function ensureGroup_(ngay, empKey, snapshot) {
+    const key = ngay + '|' + empKey;
+    const emp = employees[empKey] || null;
     if (!group[key]) {
       group[key] = {
         ngay,
-        soThe,
-        hoTen: hoTen || (employees[soThe] ? employees[soThe].HoTen : ''),
+        empKey,
+        nhanVienID: snapshot.nhanVienID || employeeId_(emp),
+        soThe: snapshot.soThe || employeeSoThe_(emp),
+        hoTen: snapshot.hoTen || employeeHoTen_(emp),
         tongGio: 0,
         gioLam: 0,
         gioNghi: 0,
         details: []
       };
     }
-    if (!group[key].hoTen && hoTen) group[key].hoTen = hoTen;
+    if (!group[key].hoTen && snapshot.hoTen) group[key].hoTen = snapshot.hoTen;
+    if (!group[key].soThe && snapshot.soThe) group[key].soThe = snapshot.soThe;
+    if (!group[key].nhanVienID && snapshot.nhanVienID) group[key].nhanVienID = snapshot.nhanVienID;
     return group[key];
   }
 
   detailRows.forEach(r => {
     const ngay = dateKey_(r.Ngay);
-    const soThe = String(r.SoThe || '').trim();
-    if (!ngay || !soThe) return;
+    const empKey = rowEmployeeKey_(r);
+    if (!ngay || !empKey) return;
 
     const phieu = phieuMap[String(r.PhieuID || '').trim()] || {};
     const job = jobs[String(r.MaCongViec || '').trim()] || {};
     const hangMuc = phieu.HangMuc || job.HangMuc || String(r.MaCongViec || '').trim();
     const soGio = Number(r.SoGio || 0);
 
-    const g = ensureGroup_(ngay, soThe, employees[soThe] ? employees[soThe].HoTen : '');
+    const g = ensureGroup_(ngay, empKey, {
+      nhanVienID: String(r.NhanVienID || '').trim(),
+      soThe: String(r.SoThe || '').trim(),
+      hoTen: clientSafeText_(r.HoTen)
+    });
     g.tongGio += soGio;
     g.gioLam += soGio;
     g.details.push(hangMuc + ' ' + soGio + 'h');
@@ -160,16 +168,20 @@ function buildEmployeeReportValues_(fromDate, toDate) {
 
   getEmployeeLeaveRowsInRange_(dateKeys).forEach(r => {
     const ngay = dateKey_(r.Ngay);
-    const soThe = String(r.SoThe || '').trim();
-    if (!ngay || !soThe) return;
+    const empKey = rowEmployeeKey_(r);
+    if (!ngay || !empKey) return;
     const soGioNghi = getLeaveHoursFromRow_(r);
-    const g = ensureGroup_(ngay, soThe, clientSafeText_(r.HoTen) || (employees[soThe] ? employees[soThe].HoTen : ''));
+    const g = ensureGroup_(ngay, empKey, {
+      nhanVienID: String(r.NhanVienID || '').trim(),
+      soThe: String(r.SoThe || '').trim(),
+      hoTen: clientSafeText_(r.HoTen)
+    });
     g.tongGio += soGioNghi;
     g.gioNghi += soGioNghi;
     g.details.push('NGHỈ ' + soGioNghi + 'h: ' + clientSafeText_(r.LyDo || 'Có đăng ký nghỉ'));
   });
 
-  const values = [['Ngay','SoThe','HoTen','TongGio','ChiTietCongViec','TrangThaiGio']];
+  const values = [['Ngay','NhanVienID','SoThe','HoTen','TongGio','ChiTietCongViec','TrangThaiGio']];
   Object.keys(group)
     .sort()
     .forEach(key => {
@@ -181,11 +193,11 @@ function buildEmployeeReportValues_(fromDate, toDate) {
         else status = 'Đủ 8h';
       }
       if (g.tongGio > APP.MAX_HOURS_PER_DAY) status = 'Vượt 8h';
-      values.push([g.ngay, g.soThe, g.hoTen, g.tongGio, g.details.join('; '), status]);
+      values.push([g.ngay, g.nhanVienID || '', g.soThe || '', g.hoTen || '', g.tongGio, g.details.join('; '), status]);
     });
 
   if (values.length === 1) {
-    values.push(['', '', '', '', 'Không có dữ liệu trong khoảng ngày đã chọn', '']);
+    values.push(['', '', '', '', '', 'Không có dữ liệu trong khoảng ngày đã chọn', '']);
   }
 
   return values;
@@ -213,8 +225,9 @@ function buildJobDailyReportValues_(fromDate, toDate) {
     const ngay = dateKey_(r.Ngay);
     const ma = String(r.MaCongViec || '').trim();
     const soThe = String(r.SoThe || '').trim();
+    const empKey = rowEmployeeKey_(r);
     const soGio = Number(r.SoGio || 0);
-    if (!ngay || !ma || !soThe) return;
+    if (!ngay || !ma || !empKey) return;
 
     const phieu = phieuMap[String(r.PhieuID || '').trim()] || {};
     const job = jobs[ma] || {};
@@ -228,7 +241,7 @@ function buildJobDailyReportValues_(fromDate, toDate) {
     cellMap[k].push(soThe + '-' + soGio + 'h');
 
     if (!employeeByDate[ngay]) employeeByDate[ngay] = {};
-    employeeByDate[ngay][soThe] = true;
+    employeeByDate[ngay][empKey] = true;
   });
 
   const header = ['STT','HangMuc'].concat(dateKeys);
@@ -274,7 +287,7 @@ function generateBasicReports(payload) {
 
   const context = getDeviceContext(payload.deviceId, payload.deviceToken);
   if (!context.ok) throw new Error(context.reason);
-  if (!context.isQL) throw new Error('Chỉ QL được tạo báo cáo.');
+  if (!canReport_(context)) throw new Error('Chỉ QL/NS được tạo báo cáo.');
 
   const lock = LockService.getScriptLock();
   lock.waitLock(30000);

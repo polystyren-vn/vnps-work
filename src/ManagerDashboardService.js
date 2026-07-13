@@ -1,21 +1,17 @@
 /**
  * VNPS Work Assign - ManagerDashboardService
- * Version: V0.10_EMPLOYEE_LEAVE_FILTER
+ * Version: V0.12.2_MOBILE_NAV_UI_POLISH
  *
- * Phạm vi:
- * - Chỉ đọc dữ liệu tổng hợp cho QL.
- * - Không sửa logic lưu/sửa/xóa/chốt/báo cáo đã pass.
- * - Không tạo sheet mới; dùng dữ liệu hiện có từ DATA_CONG_VIEC, DATA_NHAN_SU_CONG_VIEC, DATA_CHOT_NGAY.
+ * Dashboard là phần đọc tổng quan, QL/NS được xem. V0.12.2 tách giờ nghỉ khỏi các chỉ số phân công/đủ 8h/tổng giờ để tránh nhầm lẫn.
  */
-
-function requireQlContextForDashboard_(payload) {
+function requireOverviewContext_(payload) {
   if (!payload) throw new Error('Thiếu dữ liệu dashboard.');
   if (!payload.deviceId) throw new Error('Thiếu DeviceID.');
   if (!payload.ngay) throw new Error('Thiếu ngày cần xem tổng quan.');
 
   const context = getDeviceContext(payload.deviceId, payload.deviceToken);
   if (!context.ok) throw new Error(context.reason);
-  if (!context.isQL) throw new Error('Chỉ QL được xem dashboard tổng quan.');
+  if (!canViewOverview_(context)) throw new Error('Chỉ QL/NS được xem dashboard tổng quan.');
   return context;
 }
 
@@ -24,10 +20,10 @@ function buildDashboardAlerts_(status, summary, dashboard) {
   const counts = summary.counts || { short: 0, ok: 0, over: 0, leave: 0, total: 0 };
 
   if (Number(counts.over || 0) > 0) {
-    alerts.push('Có ' + counts.over + ' nhân viên vượt 8h. Cần sửa dữ liệu trước khi chốt ngày.');
+    alerts.push('Có ' + counts.over + ' nhân viên vượt 8h. Cần QL sửa dữ liệu trước khi chốt ngày.');
   }
   if (status.trangThai === APP.DAY_STATUS_CONFIRMED) {
-    alerts.push('Ngày đã xác nhận/chốt. Hệ thống đang chặn lưu mới, sửa phiếu và hủy phiếu.');
+    alerts.push('Ngày đã xác nhận/chốt. Hệ thống đang chặn lưu mới, sửa phiếu, hủy phiếu và thay đổi nghỉ.');
   }
   if (Number(dashboard.activeEntries || 0) === 0) {
     alerts.push('Chưa có phiếu ACTIVE trong ngày này.');
@@ -46,7 +42,7 @@ function buildDashboardAlerts_(status, summary, dashboard) {
 }
 
 function getManagerDashboardOverview(payload) {
-  requireQlContextForDashboard_(payload);
+  requireOverviewContext_(payload);
   const key = dateKey_(payload.ngay);
   if (!key) throw new Error('Ngày dashboard không hợp lệ.');
 
@@ -54,8 +50,12 @@ function getManagerDashboardOverview(payload) {
   const summary = buildDailyEmployeeSummary_(key);
   const counts = summary.counts || { short: 0, ok: 0, over: 0, leave: 0, total: 0 };
   const employees = summary.employees || [];
-  const assignedEmployees = employees.filter(e => Number(e.tongGio || 0) > 0).length;
-  const totalHours = employees.reduce((sum, e) => sum + Number(e.tongGio || 0), 0);
+  // V0.12.2: Dashboard tách giờ nghỉ khỏi các chỉ số phân công/đủ 8h/tổng giờ.
+  // Nghỉ vẫn có ô riêng và vẫn tham gia cảnh báo thiếu giờ nếu nghỉ + làm chưa đủ 8h.
+  const workEmployees = employees.filter(e => !e.isLeave && Number(e.gioLam || 0) > 0);
+  const assignedEmployees = workEmployees.length;
+  const totalHours = employees.reduce((sum, e) => sum + Number(e.gioLam || 0), 0);
+  const okWorkEmployees = employees.filter(e => !e.isLeave && String(e.statusCode || '') === 'OK').length;
   const confirmed = status.trangThai === APP.DAY_STATUS_CONFIRMED;
 
   let alertLevel = 'OK';
@@ -76,7 +76,7 @@ function getManagerDashboardOverview(payload) {
     deletedEntries: Number(summary.deletedEntries || 0),
     totalEmployees: Number(counts.total || 0),
     assignedEmployees,
-    okEmployees: Number(counts.ok || 0),
+    okEmployees: okWorkEmployees,
     shortEmployees: Number(counts.short || 0),
     overEmployees: Number(counts.over || 0),
     leaveEmployees: Number(counts.leave || 0),

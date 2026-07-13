@@ -1,14 +1,10 @@
 /**
  * VNPS Work Assign - EntryManageService
- * Version: V0.11_EMPLOYEE_LEAVE_HOURS_QUOTA
+ * Version: V0.11.2.1_EMPLOYEE_ID_NS_PERFORMANCE_FIX
  *
- * Phạm vi:
- * - Quản lý phiếu cho QL.
- * - Xóa mềm phiếu công việc.
- * - Sửa nội dung phiếu + danh sách nhân viên + số giờ.
- * - Không sửa logic lưu phiếu mới, đăng ký thiết bị, thêm hạng mục.
+ * Quản lý phiếu vẫn chỉ dành cho QL.
+ * V0.11.2: chi tiết nhân sự dùng NhanVienID, giữ snapshot SoThe/HoTen và fallback SoThe cho dữ liệu cũ.
  */
-
 function clientSafeText_(value, pattern) {
   if (Object.prototype.toString.call(value) === '[object Date]') {
     return Utilities.formatDate(value, APP.TIMEZONE, pattern || 'yyyy-MM-dd HH:mm:ss');
@@ -64,9 +60,10 @@ function listWorkEntriesForManage(payload) {
 
   const context = getDeviceContext(payload.deviceId, payload.deviceToken);
   if (!context.ok) throw new Error(context.reason);
-  if (!context.isQL) throw new Error('Chỉ QL được xem/quản lý phiếu.');
+  if (!canManageWorkEntry_(context)) throw new Error('Chỉ QL được xem/quản lý phiếu.');
 
   ensureWorkEntryStatusSchema_();
+  ensureWorkDetailEmployeeSchema_();
   const ngayKey = dateKey_(payload.ngay);
   const details = readObjects_(SHEETS.DATA_NHAN_SU_CONG_VIEC);
   const detailMap = {};
@@ -75,7 +72,9 @@ function listWorkEntriesForManage(payload) {
     if (!phieuId) return;
     if (!detailMap[phieuId]) detailMap[phieuId] = [];
     detailMap[phieuId].push({
+      nhanVienID: String(d.NhanVienID || '').trim(),
       soThe: String(d.SoThe || '').trim(),
+      hoTen: clientSafeText_(d.HoTen),
       soGio: Number(d.SoGio || 0)
     });
   });
@@ -116,17 +115,21 @@ function getWorkEntryHeaderById_(phieuId) {
 }
 
 function getWorkEntryDetailsById_(phieuId) {
+  ensureWorkDetailEmployeeSchema_();
   const id = String(phieuId || '').trim();
   return readObjects_(SHEETS.DATA_NHAN_SU_CONG_VIEC)
     .filter(r => String(r.PhieuID || '').trim() === id)
     .map(r => ({
       id: clientSafeText_(r.ID),
+      nhanVienID: String(r.NhanVienID || '').trim(),
       soThe: String(r.SoThe || '').trim(),
+      hoTen: clientSafeText_(r.HoTen),
       soGio: Number(r.SoGio || 0)
     }));
 }
 
 function getUsedHoursByDateExcludingPhieu_(ngay, excludePhieuId) {
+  ensureWorkDetailEmployeeSchema_();
   const key = dateKey_(ngay);
   const excludeId = String(excludePhieuId || '').trim();
   const activeMap = makeActiveWorkEntryMap_();
@@ -137,10 +140,10 @@ function getUsedHoursByDateExcludingPhieu_(ngay, excludePhieuId) {
     const phieuId = String(r.PhieuID || '').trim();
     if (phieuId === excludeId) return;
     if (!activeMap[phieuId]) return;
-    const soThe = String(r.SoThe || '').trim();
+    const empKey = rowEmployeeKey_(r);
     const gio = Number(r.SoGio || 0);
-    if (!soThe) return;
-    used[soThe] = (used[soThe] || 0) + gio;
+    if (!empKey) return;
+    used[empKey] = (used[empKey] || 0) + gio;
   });
 
   return used;
@@ -149,12 +152,14 @@ function getUsedHoursByDateExcludingPhieu_(ngay, excludePhieuId) {
 function getAvailableEmployeesForEdit_(ngay, phieuId) {
   const used = getUsedHoursByDateExcludingPhieu_(ngay, phieuId);
   const leaveHours = getLeaveHoursMapByDate_(ngay);
-  return listAssignableEmployeesByDate_(ngay)
+  // V0.11.2.1: không gọi listAssignableEmployeesByDate_ để tránh đọc DATA_NHAN_VIEN_NGHI lặp.
+  return listActiveWorkEmployees_()
     .map(e => {
-      const daDung = used[e.soThe] || 0;
-      const gioNghi = Number(leaveHours[e.soThe] || e.gioNghi || 0);
+      const key = employeeKey_(e);
+      const daDung = used[key] || 0;
+      const gioNghi = Number(leaveHours[key] || 0);
       const conLai = Math.max(0, APP.MAX_HOURS_PER_DAY - daDung - gioNghi);
-      return Object.assign({}, e, { daDung, gioNghi, conLai });
+      return Object.assign({}, e, { daDung, gioNghi, conLai, nghi: gioNghi > 0 });
     })
     .filter(e => e.conLai > 0);
 }
@@ -167,7 +172,7 @@ function getWorkEntryDetailForEdit(payload) {
 
   const context = getDeviceContext(payload.deviceId, payload.deviceToken);
   if (!context.ok) throw new Error(context.reason);
-  if (!context.isQL) throw new Error('Chỉ QL được sửa phiếu.');
+  if (!canManageWorkEntry_(context)) throw new Error('Chỉ QL được sửa phiếu.');
 
   const row = getWorkEntryHeaderById_(phieuId);
   if (!row) throw new Error('Không tìm thấy phiếu: ' + phieuId);
@@ -211,12 +216,12 @@ function validateEditPayload_(payload) {
 
   const seen = {};
   payload.nhanSu.forEach(item => {
-    const soThe = String(item.soThe || '').trim();
+    const key = item.nhanVienID || item.soThe;
     const gio = Number(item.soGio || 0);
-    if (!soThe) throw new Error('Có dòng nhân viên thiếu số thẻ.');
+    if (!key) throw new Error('Có dòng nhân viên thiếu định danh.');
     if (!gio || gio < 1 || gio > APP.MAX_HOURS_PER_DAY) throw new Error('Số giờ phải từ 1 đến 8.');
-    if (seen[soThe]) throw new Error('Số thẻ ' + soThe + ' bị chọn trùng trong phiếu sửa.');
-    seen[soThe] = true;
+    if (seen[key]) throw new Error('Nhân viên ' + key + ' bị chọn trùng trong phiếu sửa.');
+    seen[key] = true;
   });
 
   return payload;
@@ -237,7 +242,7 @@ function updateWorkEntryDetail(payload) {
   try {
     const context = getDeviceContext(payload.deviceId, payload.deviceToken);
     if (!context.ok) throw new Error(context.reason);
-    if (!context.isQL) throw new Error('Chỉ QL được sửa phiếu.');
+    if (!canManageWorkEntry_(context)) throw new Error('Chỉ QL được sửa phiếu.');
 
     const phieuId = String(payload.phieuId || '').trim();
     const row = getWorkEntryHeaderById_(phieuId);
@@ -245,35 +250,36 @@ function updateWorkEntryDetail(payload) {
     if (!isActiveWorkEntry_(row)) throw new Error('Phiếu đã hủy, không được sửa.');
 
     const ngayKey = dateKey_(row.Ngay);
-    // V0.7: ngày đã xác nhận/chốt thì phải mở lại trước khi sửa phiếu.
     assertDailyOpenForChange_(ngayKey, 'sửa phiếu');
     const maCongViec = String(row.MaCongViec || '').trim();
+    const resolvedNhanSu = resolveNhanSuForSave_(payload.nhanSu);
 
     const batchAdd = {};
-    payload.nhanSu.forEach(item => {
-      const soThe = String(item.soThe || '').trim();
-      batchAdd[soThe] = (batchAdd[soThe] || 0) + Number(item.soGio || 0);
+    resolvedNhanSu.forEach(item => {
+      batchAdd[item.key] = (batchAdd[item.key] || 0) + Number(item.soGio || 0);
     });
-
-    validateEmployeesAssignableForDate_(ngayKey, Object.keys(batchAdd));
 
     const used = getUsedHoursByDateExcludingPhieu_(ngayKey, phieuId);
     const leaveHours = getLeaveHoursMapByDate_(ngayKey);
-    Object.keys(batchAdd).forEach(soThe => {
-      const nghi = Number(leaveHours[soThe] || 0);
-      const total = (used[soThe] || 0) + batchAdd[soThe] + nghi;
+    Object.keys(batchAdd).forEach(empKey => {
+      const nghi = Number(leaveHours[empKey] || 0);
+      const total = (used[empKey] || 0) + batchAdd[empKey] + nghi;
       if (total > APP.MAX_HOURS_PER_DAY) {
-        throw new Error('Số thẻ ' + soThe + ' vượt 8h/ngày sau khi sửa. Đã có ngoài phiếu này ' + (used[soThe] || 0) + 'h làm, nghỉ ' + nghi + 'h, phiếu sửa nhập ' + batchAdd[soThe] + 'h.');
+        const emp = resolvedNhanSu.find(x => x.key === empKey) || {};
+        throw new Error('Nhân viên ' + (emp.soThe || empKey) + ' vượt 8h/ngày sau khi sửa. Đã có ngoài phiếu này ' + (used[empKey] || 0) + 'h làm, nghỉ ' + nghi + 'h, phiếu sửa nhập ' + batchAdd[empKey] + 'h.');
       }
     });
 
     const deletedDetailRows = deleteDetailRowsByPhieuId_(phieuId);
-    const detailRows = payload.nhanSu.map(item => ({
-      ID: phieuId + '_' + String(item.soThe).trim(),
+    ensureWorkDetailEmployeeSchema_();
+    const detailRows = resolvedNhanSu.map(item => ({
+      ID: phieuId + '_' + (item.nhanVienID || item.soThe),
       PhieuID: phieuId,
       Ngay: ngayKey,
       MaCongViec: maCongViec,
-      SoThe: String(item.soThe).trim(),
+      NhanVienID: item.nhanVienID,
+      SoThe: item.soThe,
+      HoTen: item.hoTen,
       SoGio: Number(item.soGio)
     }));
     const insertedDetailRows = appendObjects_(SHEETS.DATA_NHAN_SU_CONG_VIEC, detailRows);
@@ -317,7 +323,7 @@ function softDeleteWorkEntry(payload) {
   try {
     const context = getDeviceContext(payload.deviceId, payload.deviceToken);
     if (!context.ok) throw new Error(context.reason);
-    if (!context.isQL) throw new Error('Chỉ QL được hủy phiếu.');
+    if (!canManageWorkEntry_(context)) throw new Error('Chỉ QL được hủy phiếu.');
 
     ensureWorkEntryStatusSchema_();
     const rows = readObjects_(SHEETS.DATA_CONG_VIEC);
@@ -329,7 +335,6 @@ function softDeleteWorkEntry(payload) {
       throw new Error('Phiếu này đã được hủy trước đó.');
     }
 
-    // V0.7: ngày đã xác nhận/chốt thì phải mở lại trước khi hủy phiếu.
     assertDailyOpenForChange_(row.Ngay, 'hủy phiếu');
 
     updateObjectByRowNumber_(SHEETS.DATA_CONG_VIEC, row.__rowNumber, {

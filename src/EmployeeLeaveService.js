@@ -1,13 +1,20 @@
 /**
  * VNPS Work Assign - EmployeeLeaveService
- * Version: V0.11_EMPLOYEE_LEAVE_HOURS_QUOTA
+ * Version: V0.12.2_MOBILE_NAV_UI_POLISH
  *
- * Phạm vi:
- * - Loại nhân viên quyền QL khỏi danh sách phân công công việc.
- * - QL nhập nhân viên nghỉ theo ngày kèm số giờ nghỉ.
- * - Nghỉ cả ngày = 8h, nghỉ theo giờ vẫn được tính vào đủ 8h/ngày.
- * - Dropdown phân công chỉ còn số giờ làm việc sau khi trừ giờ đã làm + giờ nghỉ.
+ * - Nghỉ theo giờ giữ nguyên logic V0.11.
+ * - V0.11.2: NS và QL được xem/nhập/hủy nhân viên nghỉ khi ngày chưa chốt.
+ * - Nhân viên nghỉ chỉ lấy ViTri=NV, TrangThai=Đang làm.
+ * - Tính giờ nghỉ theo NhanVienID, fallback SoThe cho dữ liệu cũ.
+ * - V0.12.2: bổ sung sửa số giờ/lý do nghỉ khi ngày chưa chốt.
  */
+var EMPLOYEE_LEAVE_DATE_CACHE_ = {};
+
+function clearEmployeeLeaveDateCache_(ngay) {
+  if (!EMPLOYEE_LEAVE_DATE_CACHE_) EMPLOYEE_LEAVE_DATE_CACHE_ = {};
+  if (ngay) delete EMPLOYEE_LEAVE_DATE_CACHE_[dateKey_(ngay)];
+  else EMPLOYEE_LEAVE_DATE_CACHE_ = {};
+}
 
 function ensureEmployeeLeaveSheet_() {
   const db = getDb_();
@@ -17,7 +24,7 @@ function ensureEmployeeLeaveSheet_() {
   if (!sh) {
     sh = db.insertSheet(SHEETS.DATA_NHAN_VIEN_NGHI);
     sh.getRange(1, 1).setValue('VNPS WORK ASSIGN - NHÂN VIÊN NGHỈ');
-    sh.getRange(2, 1).setValue('Sheet tự tạo từ V0.10/V0.11. Header dòng 4, dữ liệu từ dòng 5. V0.11 thêm SoGioNghi để tính đủ giờ khi nghỉ theo giờ.');
+    sh.getRange(2, 1).setValue('Sheet tự tạo từ V0.10/V0.11. Header dòng 4, dữ liệu từ dòng 5. V0.11.2 thêm NhanVienID để tránh nhầm khi SoThe tái sử dụng.');
     sh.getRange(4, 1, 1, headers.length).setValues([headers]);
     sh.getRange(4, 1, 1, headers.length)
       .setFontWeight('bold')
@@ -31,36 +38,8 @@ function ensureEmployeeLeaveSheet_() {
   return ensureSheetColumns_(SHEETS.DATA_NHAN_VIEN_NGHI, headers);
 }
 
-function employeeSoThe_(e) {
-  return String((e && (e.soThe !== undefined ? e.soThe : e.SoThe)) || '').trim();
-}
-
-function employeeHoTen_(e) {
-  return String((e && (e.hoTen !== undefined ? e.hoTen : e.HoTen)) || '').trim();
-}
-
-function employeeViTri_(e) {
-  return String((e && (e.viTri !== undefined ? e.viTri : e.ViTri)) || '').trim();
-}
-
-function isQlEmployee_(e) {
-  return employeeViTri_(e).toUpperCase() === 'QL';
-}
-
-function toClientEmployee_(e, extra) {
-  return Object.assign({
-    soThe: employeeSoThe_(e),
-    hoTen: employeeHoTen_(e),
-    viTri: employeeViTri_(e)
-  }, extra || {});
-}
-
 function listActiveWorkEmployees_() {
-  // Dùng lại danh mục nhân viên hiện có, chỉ loại QL khỏi nhóm được phân công công việc.
-  return listActiveEmployees()
-    .filter(e => employeeSoThe_(e))
-    .filter(e => !isQlEmployee_(e))
-    .map(e => toClientEmployee_(e));
+  return listAssignableEmployees_();
 }
 
 function isActiveEmployeeLeave_(row) {
@@ -84,30 +63,49 @@ function getActiveLeaveRowsByDate_(ngay) {
   ensureEmployeeLeaveSheet_();
   const key = dateKey_(ngay);
   if (!key) return [];
-  return readObjects_(SHEETS.DATA_NHAN_VIEN_NGHI)
+
+  if (!EMPLOYEE_LEAVE_DATE_CACHE_) EMPLOYEE_LEAVE_DATE_CACHE_ = {};
+  if (EMPLOYEE_LEAVE_DATE_CACHE_[key] && EMPLOYEE_LEAVE_DATE_CACHE_[key].rows) {
+    return EMPLOYEE_LEAVE_DATE_CACHE_[key].rows;
+  }
+
+  const rows = readObjects_(SHEETS.DATA_NHAN_VIEN_NGHI)
     .filter(r => dateKey_(r.Ngay) === key)
     .filter(isActiveEmployeeLeave_);
+
+  EMPLOYEE_LEAVE_DATE_CACHE_[key] = Object.assign(EMPLOYEE_LEAVE_DATE_CACHE_[key] || {}, { rows });
+  return rows;
+}
+
+function getLeaveMapsByDate_(ngay) {
+  const key = dateKey_(ngay);
+  if (!key) return { rows: [], rowsByKey: {}, hoursByKey: {} };
+  if (!EMPLOYEE_LEAVE_DATE_CACHE_) EMPLOYEE_LEAVE_DATE_CACHE_ = {};
+  const cached = EMPLOYEE_LEAVE_DATE_CACHE_[key] || {};
+  if (cached.rowsByKey && cached.hoursByKey) return cached;
+
+  const rows = getActiveLeaveRowsByDate_(key);
+  const rowsByKey = {};
+  const hoursByKey = {};
+
+  rows.forEach(r => {
+    const empKey = rowEmployeeKey_(r);
+    if (!empKey) return;
+    if (!rowsByKey[empKey]) rowsByKey[empKey] = [];
+    rowsByKey[empKey].push(r);
+    hoursByKey[empKey] = Math.min(APP.MAX_HOURS_PER_DAY, (hoursByKey[empKey] || 0) + getLeaveHoursFromRow_(r));
+  });
+
+  EMPLOYEE_LEAVE_DATE_CACHE_[key] = Object.assign(cached, { rows, rowsByKey, hoursByKey });
+  return EMPLOYEE_LEAVE_DATE_CACHE_[key];
 }
 
 function getActiveLeaveMapByDate_(ngay) {
-  const map = {};
-  getActiveLeaveRowsByDate_(ngay).forEach(r => {
-    const soThe = String(r.SoThe || '').trim();
-    if (!soThe) return;
-    if (!map[soThe]) map[soThe] = [];
-    map[soThe].push(r);
-  });
-  return map;
+  return getLeaveMapsByDate_(ngay).rowsByKey || {};
 }
 
 function getLeaveHoursMapByDate_(ngay) {
-  const map = {};
-  getActiveLeaveRowsByDate_(ngay).forEach(r => {
-    const soThe = String(r.SoThe || '').trim();
-    if (!soThe) return;
-    map[soThe] = Math.min(APP.MAX_HOURS_PER_DAY, (map[soThe] || 0) + getLeaveHoursFromRow_(r));
-  });
-  return map;
+  return getLeaveMapsByDate_(ngay).hoursByKey || {};
 }
 
 function getLeaveReasonTextForEmployee_(leaveRows) {
@@ -127,6 +125,7 @@ function listEmployeeLeavesForClient_(ngay) {
       return {
         id: clientSafeText_(r.ID),
         ngay: dateKey_(r.Ngay),
+        nhanVienID: String(r.NhanVienID || '').trim(),
         soThe: String(r.SoThe || '').trim(),
         hoTen: clientSafeText_(r.HoTen),
         soGioNghi: h,
@@ -137,14 +136,15 @@ function listEmployeeLeavesForClient_(ngay) {
         thoiGianLuu: clientSafeText_(r.ThoiGianLuu, 'yyyy-MM-dd HH:mm:ss')
       };
     })
-    .sort((a, b) => String(a.soThe).localeCompare(String(b.soThe)));
+    .sort((a, b) => String(a.soThe).localeCompare(String(b.soThe)) || String(a.nhanVienID).localeCompare(String(b.nhanVienID)));
 }
 
 function listAssignableEmployeesByDate_(ngay) {
   const leaveHoursMap = getLeaveHoursMapByDate_(ngay);
   return listActiveWorkEmployees_()
     .map(e => {
-      const gioNghi = Number(leaveHoursMap[e.soThe] || 0);
+      const key = employeeKey_(e);
+      const gioNghi = Number(leaveHoursMap[key] || 0);
       return Object.assign({}, e, {
         nghi: gioNghi > 0,
         gioNghi: gioNghi
@@ -152,15 +152,17 @@ function listAssignableEmployeesByDate_(ngay) {
     });
 }
 
-function validateEmployeesAssignableForDate_(ngay, soTheList) {
+function validateEmployeesAssignableForDate_(ngay, employeeKeysOrInputs) {
   const baseMap = {};
-  listActiveWorkEmployees_().forEach(e => baseMap[e.soThe] = e);
+  listActiveWorkEmployees_().forEach(e => baseMap[employeeKey_(e)] = e);
 
-  (soTheList || []).forEach(soTheRaw => {
-    const soThe = String(soTheRaw || '').trim();
-    if (!soThe) throw new Error('Có dòng nhân viên thiếu số thẻ.');
-    if (!baseMap[soThe]) {
-      throw new Error('Số thẻ ' + soThe + ' không được phân công công việc. Có thể là QL, đã nghỉ việc hoặc không hợp lệ.');
+  (employeeKeysOrInputs || []).forEach(raw => {
+    const emp = typeof raw === 'object' ? resolveEmployeeInput_(raw) : (getEmployeeById_(raw) || getEmployeeByCard_(raw, true));
+    const key = emp ? employeeKey_(emp) : String(raw || '').trim();
+    if (!key) throw new Error('Có dòng nhân viên thiếu định danh.');
+    if (!emp || !baseMap[key]) {
+      const label = emp ? employeeSoThe_(emp) : String(raw || '');
+      throw new Error('Nhân viên ' + label + ' không được phân công công việc. Có thể là QL/NS, đã nghỉ việc hoặc không hợp lệ.');
     }
   });
 }
@@ -172,7 +174,7 @@ function getEmployeeLeaveInfo(payload) {
 
   const context = getDeviceContext(payload.deviceId, payload.deviceToken);
   if (!context.ok) throw new Error(context.reason);
-  if (!context.isQL) throw new Error('Chỉ QL được xem/nhập nhân viên nghỉ.');
+  if (!canManageLeave_(context)) throw new Error('Chỉ QL/NS được xem/nhập nhân viên nghỉ.');
 
   const key = dateKey_(payload.ngay);
   return {
@@ -191,10 +193,11 @@ function getEmployeeLeaveById_(leaveId) {
     .find(r => String(r.ID || '').trim() === id) || null;
 }
 
-function getNextLeaveId_(ngay, soThe) {
+function getNextLeaveId_(ngay, employeeKeyOrSoThe) {
   ensureEmployeeLeaveSheet_();
   const datePart = dateKey_(ngay).replace(/-/g, '');
-  const prefix = 'NGHI_' + datePart + '_' + String(soThe || '').trim() + '_';
+  const safeKey = String(employeeKeyOrSoThe || '').trim().replace(/[^A-Za-z0-9_-]/g, '');
+  const prefix = 'NGHI_' + datePart + '_' + safeKey + '_';
   let maxNum = 0;
   readObjects_(SHEETS.DATA_NHAN_VIEN_NGHI).forEach(r => {
     const id = String(r.ID || '').trim();
@@ -212,26 +215,26 @@ function saveEmployeeLeave(payload) {
 
   const context = getDeviceContext(payload.deviceId, payload.deviceToken);
   if (!context.ok) throw new Error(context.reason);
-  if (!context.isQL) throw new Error('Chỉ QL được nhập nhân viên nghỉ.');
+  if (!canManageLeave_(context)) throw new Error('Chỉ QL/NS được nhập nhân viên nghỉ.');
 
   const key = dateKey_(payload.ngay);
-  const soThe = String(payload.soThe || '').trim();
   const lyDo = String(payload.lyDo || '').trim();
   const soGioNghi = Number(payload.soGioNghi || payload.gioNghi || APP.MAX_HOURS_PER_DAY);
 
-  if (!soThe) throw new Error('Vui lòng chọn nhân viên nghỉ.');
   if (!soGioNghi || isNaN(soGioNghi) || soGioNghi < 1 || soGioNghi > APP.MAX_HOURS_PER_DAY) {
     throw new Error('Số giờ nghỉ phải từ 1 đến 8. Nghỉ cả ngày nhập 8h.');
   }
   if (!lyDo) throw new Error('Vui lòng nhập lý do/nguyên nhân nghỉ.');
 
-  const emp = getEmployeeByCard_(soThe);
+  const emp = resolveEmployeeInput_(payload);
   if (!emp || String(emp.TrangThai || '').trim() !== 'Đang làm') {
     throw new Error('Nhân viên nghỉ không hợp lệ hoặc không còn đang làm.');
   }
-  if (isQlEmployee_(emp)) {
-    throw new Error('Nhân viên quyền QL không nằm trong danh sách phân công công việc nên không nhập vào mục nhân viên nghỉ của báo cáo công việc.');
+  if (!isAssignableEmployee_(emp)) {
+    throw new Error('Chỉ nhân viên ViTri=NV mới nằm trong danh sách nhân viên nghỉ của báo cáo công việc.');
   }
+
+  const empKey = employeeKey_(emp);
 
   const lock = LockService.getScriptLock();
   lock.waitLock(30000);
@@ -240,19 +243,20 @@ function saveEmployeeLeave(payload) {
     ensureEmployeeLeaveSheet_();
 
     const duplicated = getActiveLeaveRowsByDate_(key)
-      .some(r => String(r.SoThe || '').trim() === soThe);
-    if (duplicated) throw new Error('Nhân viên ' + soThe + ' đã có trong danh sách nghỉ ngày ' + key + '. Nếu muốn đổi số giờ nghỉ, hãy hủy dòng nghỉ cũ rồi nhập lại.');
+      .some(r => rowEmployeeKey_(r) === empKey);
+    if (duplicated) throw new Error('Nhân viên ' + employeeSoThe_(emp) + ' đã có trong danh sách nghỉ ngày ' + key + '. Nếu muốn đổi số giờ nghỉ, hãy hủy dòng nghỉ cũ rồi nhập lại.');
 
-    const usedWork = getUsedHoursByDate_(key)[soThe] || 0;
+    const usedWork = getUsedHoursByDate_(key)[empKey] || 0;
     if (usedWork + soGioNghi > APP.MAX_HOURS_PER_DAY) {
-      throw new Error('Số thẻ ' + soThe + ' đã có ' + usedWork + 'h công việc. Không thể nhập nghỉ ' + soGioNghi + 'h vì tổng sẽ vượt 8h.');
+      throw new Error('Nhân viên ' + employeeSoThe_(emp) + ' đã có ' + usedWork + 'h công việc. Không thể nhập nghỉ ' + soGioNghi + 'h vì tổng sẽ vượt 8h.');
     }
 
-    const id = getNextLeaveId_(key, soThe);
+    const id = getNextLeaveId_(key, employeeId_(emp) || employeeSoThe_(emp));
     appendObject_(SHEETS.DATA_NHAN_VIEN_NGHI, {
       ID: id,
       Ngay: key,
-      SoThe: soThe,
+      NhanVienID: employeeId_(emp),
+      SoThe: employeeSoThe_(emp),
       HoTen: employeeHoTen_(emp),
       SoGioNghi: soGioNghi,
       LyDo: lyDo,
@@ -264,8 +268,9 @@ function saveEmployeeLeave(payload) {
       ThoiGianHuy: '',
       LyDoHuy: ''
     });
+    clearEmployeeLeaveDateCache_(key);
 
-    writeLog_(context.deviceId, context.soThe, 'NHAP_NHAN_VIEN_NGHI', key + ' · ' + soThe + ' · nghỉ ' + soGioNghi + 'h · ' + lyDo);
+    writeLog_(context.deviceId, context.soThe, 'NHAP_NHAN_VIEN_NGHI', key + ' · ' + employeeId_(emp) + ' · ' + employeeSoThe_(emp) + ' · nghỉ ' + soGioNghi + 'h · ' + lyDo);
     return getEmployeeLeaveInfo({ deviceId: context.deviceId, deviceToken: payload.deviceToken, ngay: key });
   } finally {
     lock.releaseLock();
@@ -282,7 +287,7 @@ function cancelEmployeeLeave(payload) {
 
   const context = getDeviceContext(payload.deviceId, payload.deviceToken);
   if (!context.ok) throw new Error(context.reason);
-  if (!context.isQL) throw new Error('Chỉ QL được hủy nhân viên nghỉ.');
+  if (!canManageLeave_(context)) throw new Error('Chỉ QL/NS được hủy nhân viên nghỉ.');
 
   const lock = LockService.getScriptLock();
   lock.waitLock(30000);
@@ -300,8 +305,67 @@ function cancelEmployeeLeave(payload) {
       ThoiGianHuy: nowText_(),
       LyDoHuy: reason
     });
+    clearEmployeeLeaveDateCache_(key);
 
-    writeLog_(context.deviceId, context.soThe, 'HUY_NHAN_VIEN_NGHI', key + ' · ' + String(row.SoThe || '').trim() + ' · nghỉ ' + getLeaveHoursFromRow_(row) + 'h · ' + reason);
+    writeLog_(context.deviceId, context.soThe, 'HUY_NHAN_VIEN_NGHI', key + ' · ' + String(row.NhanVienID || '').trim() + ' · ' + String(row.SoThe || '').trim() + ' · nghỉ ' + getLeaveHoursFromRow_(row) + 'h · ' + reason);
+    return getEmployeeLeaveInfo({ deviceId: context.deviceId, deviceToken: payload.deviceToken, ngay: key });
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+function updateEmployeeLeave(payload) {
+  if (!payload) throw new Error('Thiếu dữ liệu sửa nhân viên nghỉ.');
+  if (!payload.deviceId) throw new Error('Thiếu DeviceID.');
+  const leaveId = String(payload.leaveId || '').trim();
+  const lyDo = String(payload.lyDo || payload.reason || '').trim();
+  const soGioNghi = Number(payload.soGioNghi || payload.gioNghi || 0);
+  if (!leaveId) throw new Error('Thiếu mã dòng nghỉ cần sửa.');
+  if (!soGioNghi || isNaN(soGioNghi) || soGioNghi < 1 || soGioNghi > APP.MAX_HOURS_PER_DAY) {
+    throw new Error('Số giờ nghỉ phải từ 1 đến 8.');
+  }
+  if (!lyDo) throw new Error('Vui lòng nhập lý do/nguyên nhân nghỉ.');
+
+  const context = getDeviceContext(payload.deviceId, payload.deviceToken);
+  if (!context.ok) throw new Error(context.reason);
+  if (!canManageLeave_(context)) throw new Error('Chỉ QL/NS được sửa nhân viên nghỉ.');
+
+  const lock = LockService.getScriptLock();
+  lock.waitLock(30000);
+  try {
+    const row = getEmployeeLeaveById_(leaveId);
+    if (!row) throw new Error('Không tìm thấy dòng nghỉ: ' + leaveId);
+    if (!isActiveEmployeeLeave_(row)) throw new Error('Dòng nghỉ này đã được hủy, không được sửa.');
+
+    const key = dateKey_(row.Ngay);
+    assertDailyOpenForChange_(key, 'sửa nhân viên nghỉ');
+
+    const emp = resolveEmployeeInput_({ NhanVienID: row.NhanVienID, SoThe: row.SoThe });
+    const empKey = rowEmployeeKey_(row) || (emp ? employeeKey_(emp) : '');
+    if (!empKey) throw new Error('Dòng nghỉ thiếu định danh nhân viên.');
+
+    const usedWork = getUsedHoursByDate_(key)[empKey] || 0;
+    if (usedWork + soGioNghi > APP.MAX_HOURS_PER_DAY) {
+      const label = String(row.SoThe || (emp ? employeeSoThe_(emp) : '') || '').trim();
+      throw new Error('Nhân viên ' + label + ' đã có ' + usedWork + 'h công việc. Không thể sửa nghỉ thành ' + soGioNghi + 'h vì tổng sẽ vượt 8h.');
+    }
+
+    const oldHours = getLeaveHoursFromRow_(row);
+    const oldReason = String(row.LyDo || '').trim();
+    updateObjectByRowNumber_(SHEETS.DATA_NHAN_VIEN_NGHI, row.__rowNumber, {
+      SoGioNghi: soGioNghi,
+      LyDo: lyDo
+    });
+    clearEmployeeLeaveDateCache_(key);
+
+    writeLog_(
+      context.deviceId,
+      context.soThe,
+      'SUA_NHAN_VIEN_NGHI',
+      key + ' · ' + String(row.NhanVienID || '').trim() + ' · ' + String(row.SoThe || '').trim()
+        + ' · ' + oldHours + 'h → ' + soGioNghi + 'h'
+        + ' · ' + oldReason + ' → ' + lyDo
+    );
     return getEmployeeLeaveInfo({ deviceId: context.deviceId, deviceToken: payload.deviceToken, ngay: key });
   } finally {
     lock.releaseLock();
